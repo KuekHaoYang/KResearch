@@ -5,7 +5,7 @@ from __future__ import annotations
 # Suggested models per provider (not exhaustive -- providers accept any valid model ID).
 OPENAI_MODELS: list[str] = ["gpt-4o", "gpt-4o-mini", "o3-mini"]
 ANTHROPIC_MODELS: list[str] = ["claude-sonnet-4-20250514", "claude-haiku-4-5-20251001"]
-GEMINI_MODELS: list[str] = ["gemini-2.0-flash", "gemini-2.5-pro"]
+GEMINI_MODELS: list[str] = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash"]
 GROK_MODELS: list[str] = ["grok-3", "grok-3-mini"]
 PERPLEXITY_MODELS: list[str] = ["sonar", "sonar-pro"]
 DEEPSEEK_MODELS: list[str] = ["deepseek-chat", "deepseek-reasoner"]
@@ -24,7 +24,7 @@ ALL_MODELS: dict[str, list[str]] = {
 DEFAULT_MODELS: dict[str, str] = {
     "openai": "gpt-4o",
     "anthropic": "claude-sonnet-4-20250514",
-    "gemini": "gemini-2.0-flash",
+    "gemini": "gemini-2.5-flash",
     "grok": "grok-3",
     "perplexity": "sonar-pro",
     "deepseek": "deepseek-chat",
@@ -77,21 +77,14 @@ async def _fetch_openai_compat(endpoint: str, api_key: str) -> list[str]:
 
 
 async def _fetch_gemini_models(api_key: str | None) -> list[str]:
-    import httpx
+    import asyncio
     if not api_key:
         return None  # type: ignore[return-value]
-    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
-    async with httpx.AsyncClient(timeout=15) as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
-        data = resp.json()
-    models = []
-    for m in data.get("models", []):
-        name = m.get("name", "")
-        if name.startswith("models/"):
-            name = name[len("models/"):]
-        if "generateContent" in str(m.get("supportedGenerationMethods", [])):
-            models.append(name)
+    from google import genai
+    client = genai.Client(api_key=api_key)
+    models = await asyncio.to_thread(
+        lambda: [m.name for m in client.models.list()]
+    )
     return sorted(models)
 
 

@@ -1,4 +1,4 @@
-"""Google Gemini LLM provider — supports both google-genai and legacy SDK."""
+"""Google Gemini LLM provider using the google-genai SDK."""
 
 from __future__ import annotations
 
@@ -11,14 +11,9 @@ from .registry import register
 
 
 def _sdk_available() -> bool:
-    """Check if any Gemini SDK is installed."""
+    """Check if the google-genai SDK is installed."""
     try:
         from google import genai  # noqa: F401
-        return True
-    except ImportError:
-        pass
-    try:
-        import google.generativeai  # noqa: F401
         return True
     except ImportError:
         return False
@@ -36,7 +31,7 @@ def _resolve_api_key(api_key: str | None) -> str | None:
 
 
 class GeminiProvider(LLMProvider):
-    """Provider backed by google-genai (preferred) or google-generativeai."""
+    """Provider backed by the google-genai SDK."""
 
     def __init__(self, api_key: str | None = None, **kwargs):
         super().__init__(api_key=_resolve_api_key(api_key), **kwargs)
