@@ -1,47 +1,21 @@
 # Contributing to KResearch
 
-Thank you for your interest in contributing to KResearch! This document provides guidelines and instructions for contributing.
+Thank you for considering a contribution to KResearch. This document explains the project's architecture in enough detail that you can orient yourself, add a new provider or tool, or modify the agent loop without guesswork.
 
 ---
 
 ## Table of Contents
 
-- [Code of Conduct](#code-of-conduct)
-- [Getting Started](#getting-started)
 - [Development Setup](#development-setup)
-- [Architecture Overview](#architecture-overview)
-- [Code Standards](#code-standards)
-- [The 150-Line Rule](#the-150-line-rule)
-- [Adding a New LLM Provider](#adding-a-new-llm-provider)
-- [Adding a New Search Provider](#adding-a-new-search-provider)
-- [Adding a New Slash Command](#adding-a-new-slash-command)
+- [Project Structure](#project-structure)
+- [Code Conventions](#code-conventions)
+- [Understanding the Agent Loop](#understanding-the-agent-loop)
+- [Adding a New Provider](#adding-a-new-provider)
+- [Adding a New Tool](#adding-a-new-tool)
+- [Modifying the System Prompt](#modifying-the-system-prompt)
+- [Data Models](#data-models)
 - [Testing](#testing)
-- [Submitting Changes](#submitting-changes)
-- [Reporting Issues](#reporting-issues)
-
----
-
-## Code of Conduct
-
-Be respectful, constructive, and inclusive. We are all here to build something great together.
-
----
-
-## Getting Started
-
-1. **Fork** the repository on GitHub
-2. **Clone** your fork locally:
-   ```bash
-   git clone https://github.com/yourusername/kresearch.git
-   cd kresearch
-   ```
-3. **Create a branch** for your feature or fix:
-   ```bash
-   git checkout -b feature/my-new-feature
-   ```
-4. **Set up** the development environment (see below)
-5. **Make changes**, ensuring all standards are met
-6. **Submit** a pull request
+- [Pull Request Guidelines](#pull-request-guidelines)
 
 ---
 
@@ -49,417 +23,451 @@ Be respectful, constructive, and inclusive. We are all here to build something g
 
 ### Prerequisites
 
-- Python 3.11+
-- Git
-- (Optional) Docker for sandbox testing
-- (Optional) Ollama for local LLM testing
+- Python 3.10+
+- A Gemini API key for integration testing (`export GOOGLE_API_KEY=...`)
 
-### Install Dependencies
+### Install
 
 ```bash
-# Create and activate virtual environment
-python -m venv .venv
-source .venv/bin/activate
-
-# Install in development mode
-pip install -e .
-
-# Or install from requirements
-pip install -r requirements.txt
+git clone https://github.com/yourname/kresearch.git
+cd kresearch
+pip install -e ".[dev]"
 ```
 
-### Set Up Environment
-
-```bash
-# Copy the environment template
-cp .env.example .env
-
-# Add at least one LLM API key for testing
-# DuckDuckGo search works without any key
-```
-
-### Verify Installation
-
-```bash
-# Run the REPL
-python -m kresearch
-
-# Check that all modules import correctly
-python -c "
-from kresearch.config import load_config
-from kresearch.core import EventBus, ResearchSession, EpistemicMindMap, TaskGraph
-from kresearch.llm.models import ALL_MODELS
-from kresearch.search.models import SEARCH_PROVIDERS
-from kresearch.commands.registry import get_all_commands
-print('All imports OK')
-print(f'LLM providers: {list(ALL_MODELS.keys())}')
-print(f'Search providers: {list(SEARCH_PROVIDERS.keys())}')
-print(f'Commands: {list(get_all_commands().keys())}')
-"
-```
-
----
-
-## Architecture Overview
-
-KResearch follows a **hexagonal (ports & adapters)** architecture:
-
-- **Core** (`kresearch/core/`) -- Domain models (session, mind map, task graph, events). No external dependencies.
-- **Ports** -- Abstract base classes (`llm/base.py`, `search/base.py`, `sandbox/base.py`, `export/base.py`)
-- **Adapters** -- Concrete implementations (each provider file)
-- **Phases** (`kresearch/phases/`) -- Business logic for the 5-phase workflow
-- **UI** (`kresearch/ui/`) -- Terminal rendering, decoupled via EventBus
-- **Commands** (`kresearch/commands/`) -- Slash command handlers
-
-### Key Design Principles
-
-1. **Dependency flows inward** -- Core has no knowledge of adapters or UI
-2. **EventBus decouples** -- Phases publish events; UI and Telegram subscribe independently
-3. **Factory pattern** -- All providers are instantiated via factories using registries
-4. **Async-first** -- All I/O operations are async; sync SDKs are wrapped with `asyncio.to_thread()`
-5. **Graceful degradation** -- Missing optional dependencies (Docker, Telegram, ChromaDB) never crash the app
-
----
-
-## Code Standards
-
-### Style
-
-- **Line length**: 100 characters maximum (configured in `pyproject.toml` for Ruff)
-- **Type hints**: Use type annotations on all function signatures
-- **Imports**: Use `from __future__ import annotations` at the top of every file
-- **Docstrings**: Required for all public classes and functions
-- **Naming**: snake_case for functions/variables, PascalCase for classes, UPPER_CASE for constants
-
-### Tools
-
-```bash
-# Format and lint (if ruff is installed)
-ruff check kresearch/ --fix
-ruff format kresearch/
-
-# Type check (if mypy is installed)
-mypy kresearch/
-```
-
-### Error Handling
-
-- Use `try/except` around external API calls and optional imports
-- Log errors with `kresearch.utils.logger.get_logger(__name__)`
-- Never let one failed task crash the entire pipeline -- use `return_exceptions=True` in `asyncio.gather()`
-- Provide meaningful error messages to the user via Rich panels
-
----
-
-## The 150-Line Rule
-
-**Every Python file in KResearch must be 150 lines or fewer.** This is a hard constraint.
-
-### Why?
-
-- Forces modular, focused code
-- Makes files easy to read and review
-- Encourages separation of concerns
-- Keeps the codebase maintainable
-
-### How to Stay Under 150 Lines
-
-- **One responsibility per file** -- If a file does two distinct things, split it
-- **Extract helpers** -- Move utility functions to `kresearch/utils/`
-- **Use composition** -- Delegate to other modules instead of inlining logic
-- **Minimal comments** -- Use clear names instead of verbose comments
-- **No boilerplate** -- Use dataclasses, Pydantic models, and decorators to reduce repetition
+This installs the package in editable mode with dev dependencies: `pytest`, `pytest-asyncio`, `ruff`, `mypy`.
 
 ### Verify
 
 ```bash
-# Check that no file exceeds 150 lines
-find kresearch -name "*.py" -exec wc -l {} + | awk '$1 > 150 && !/total/ {print "OVER LIMIT:", $0}'
+# Run the linter
+ruff check src/
+
+# Run type checking
+mypy src/
+
+# Run tests
+pytest
+
+# Verify CLI works
+kresearch --help
 ```
 
 ---
 
-## Adding a New LLM Provider
+## Project Structure
 
-1. **Create the provider file** at `kresearch/llm/<name>_provider.py` (max 150 lines)
-
-2. **Implement the `LLMProvider` interface**:
-
-```python
-"""<Name> LLM provider for KResearch."""
-
-from __future__ import annotations
-
-import os
-from typing import AsyncIterator
-
-from kresearch.llm.base import LLMProvider
-from kresearch.llm.registry import register
-
-
-class MyProvider(LLMProvider):
-    """<Name> LLM provider."""
-
-    def __init__(self, api_key: str | None = None, **kwargs):
-        self._api_key = api_key or os.environ.get("MY_API_KEY", "")
-
-    @property
-    def name(self) -> str:
-        return "myprovider"
-
-    @property
-    def available_models(self) -> list[str]:
-        return ["model-a", "model-b"]
-
-    def is_available(self) -> bool:
-        return bool(self._api_key)
-
-    def supports_json_mode(self) -> bool:
-        return False
-
-    async def complete(self, messages, model, temperature=0.2,
-                       max_tokens=4096, json_mode=False,
-                       system_prompt=None) -> dict:
-        # Implement API call
-        return {"content": "...", "model": model,
-                "usage": {"input_tokens": 0, "output_tokens": 0}}
-
-    async def stream(self, messages, model, temperature=0.2,
-                     max_tokens=4096,
-                     system_prompt=None) -> AsyncIterator[str]:
-        # Implement streaming
-        yield "..."
-
-
-# Self-register at import time
-register("myprovider", MyProvider)
 ```
-
-3. **Add models** to `kresearch/llm/models.py`:
-
-```python
-MY_MODELS = ["model-a", "model-b"]
-# Add to ALL_MODELS and DEFAULT_MODELS dicts
+src/kresearch/
+├── cli.py                   # Click CLI entry point — parses args, builds config,
+│                            #   creates provider, launches orchestrator
+├── config.py                # KResearchConfig (Pydantic Settings) — loads from
+│                            #   env vars, .env file, and CLI overrides
+├── prompts.py               # SYSTEM_TEMPLATE — the ~7K-char system prompt that
+│                            #   defines the agent's research methodology, tool
+│                            #   usage guide, citation rules, and report format
+├── orchestrator.py          # Orchestrator class — the autonomous agent loop
+│                            #   with interrupt monitoring, batch function
+│                            #   responses, budget enforcement, and finalization
+│
+├── models/
+│   ├── mind_map.py          # MindMap (hierarchical tree), MindMapNode, Source,
+│   │                        #   Contradiction — the agent's persistent memory
+│   ├── task_graph.py        # TaskGraph, TaskNode, TaskStatus — tracks sub-tasks
+│   │                        #   spawned by the agent (pending/running/completed)
+│   └── state.py             # ResearchState — the top-level mutable session state
+│                            #   containing mind_map, task_graph, iteration count,
+│                            #   token usage, action log, and draft_requested flag
+│
+├── providers/
+│   ├── __init__.py          # get_provider(config) factory — dynamically imports
+│   │                        #   and instantiates the configured provider class
+│   ├── base.py              # ProviderInterface (ABC) and ChatSession (ABC) —
+│   │                        #   the contracts every provider must implement
+│   ├── types.py             # Provider-agnostic types: Message, GenerateResponse,
+│   │                        #   FunctionCall, ModelInfo, ToolDeclaration
+│   ├── gemini/
+│   │   ├── provider.py      # GeminiProvider — wraps google-genai SDK; handles
+│   │   │                    #   tool declaration conversion, response parsing,
+│   │   │                    #   thinking config, proxy support, model listing
+│   │   └── chat.py          # GeminiChatSession — multi-turn chat with proper
+│   │                        #   batch function-response support (sends all tool
+│   │                        #   results in a single message)
+│   ├── openai/__init__.py   # Placeholder — raises NotImplementedError
+│   ├── anthropic/__init__.py
+│   ├── xai/__init__.py
+│   └── perplexity/__init__.py
+│
+├── tools/
+│   ├── registry.py          # ToolRegistry (register/execute/get_declarations)
+│   │                        #   + create_default_registry() that wires all tools
+│   ├── web_search.py        # DuckDuckGo search via ddgs library
+│   ├── web_reader.py        # trafilatura extraction + httpx/bs4 fallback
+│   ├── code_executor.py     # Sandboxed subprocess Python execution
+│   ├── research_tools.py    # update_findings, log_contradiction, draft_report
+│   │                        #   — tools that modify the MindMap state
+│   └── subagent_tool.py     # spawn_subagent — creates a new ChatSession and
+│                            #   runs a mini 5-iteration research loop
+│
+└── output/
+    ├── console.py           # ConsoleUI — Rich-based terminal UI (ASCII banner,
+    │                        #   live progress panel, model table, report display)
+    └── markdown.py          # Post-processing: ensure_citations(), format_source_list(),
+                             #   save_report()
 ```
-
-4. **Import in `__init__.py`** -- Add `from kresearch.llm import myprovider` to trigger registration
-
-5. **Add the API key** to `.env.example` and update `kresearch/config/loader.py`'s `_API_KEY_MAP`
 
 ---
 
-## Adding a New Search Provider
+## Code Conventions
 
-1. **Create the provider file** at `kresearch/search/<name>_provider.py` (max 150 lines)
+### File size limit
 
-2. **Implement the `SearchProvider` interface**:
+Every `.py` file must be **150 lines or fewer**. This is a hard constraint enforced during review. If a file grows beyond this, split it into focused modules. The system prompt is the longest single string in the project (~136 lines in `prompts.py`) and is exempt from the "code logic" line count only because it is a data constant.
 
-```python
-"""<Name> search provider for KResearch."""
+### Style
 
-from __future__ import annotations
+- **Formatter/linter:** `ruff` (configured at 100 chars line length, Python 3.10 target).
+- **Type checker:** `mypy` in strict mode.
+- **Async everywhere:** All I/O-bound code uses `asyncio`. Blocking calls (ddgs, trafilatura, subprocess) are wrapped in `asyncio.to_thread()`.
+- **Pydantic models:** All data structures use Pydantic `BaseModel` with type annotations.
+- **No hardcoded model IDs** outside `config.py` defaults and provider `DEFAULT_MODEL`/`FAST_MODEL` constants.
 
-from kresearch.search.base import SearchProvider
-from kresearch.search.registry import register
+### Naming
 
+- Tool handlers: `handle_<tool_name>(args: dict, **ctx) -> dict`
+- Tool declarations: `<TOOL_NAME>_DECLARATION: ToolDeclaration`
+- Provider classes: `<Name>Provider(ProviderInterface)`
+- Chat session classes: `<Name>ChatSession(ChatSession)`
 
-class MySearchProvider(SearchProvider):
-    """<Name> search provider."""
+### Error handling
 
-    @property
-    def name(self) -> str:
-        return "mysearch"
-
-    @property
-    def is_free(self) -> bool:
-        return True  # or False
-
-    def is_available(self) -> bool:
-        return True
-
-    async def search(self, query: str, max_results: int = 10) -> list[dict]:
-        # Return list of {title, url, snippet, source}
-        return [
-            {
-                "title": "Result",
-                "url": "https://example.com",
-                "snippet": "Some text...",
-                "source": "mysearch",
-            }
-        ]
-
-
-register("mysearch", MySearchProvider)
-```
-
-3. **Add to `search/models.py`** -- Update `SEARCH_PROVIDERS` dict and optionally `FREE_PROVIDERS` set
-
-4. **Import in `__init__.py`** -- Add the import to trigger registration
+- Tool handlers must **never raise**. They catch exceptions internally and return `{"error": "..."}`. The `ToolRegistry.execute()` wrapper also catches uncaught exceptions as a safety net.
+- Provider errors (invalid API key, network failure) propagate up and are caught by the CLI.
 
 ---
 
-## Adding a New Slash Command
+## Understanding the Agent Loop
 
-1. **Create the command file** at `kresearch/commands/<name>_cmd.py` (max 150 lines)
+The core logic lives in `Orchestrator` (`orchestrator.py`). Here is the exact control flow:
 
-2. **Use the `@command` decorator**:
+### `Orchestrator.run(query)`
 
-```python
-"""My custom command for KResearch."""
+1. Create `ResearchState` from the query.
+2. Build the system prompt from `SYSTEM_TEMPLATE`, injecting the current mind map state.
+3. Create a `ChatSession` via `provider.create_chat()`, passing the system prompt and all tool declarations.
+4. Start the Rich live panel.
+5. Start the stdin monitor task (`_monitor_input`).
+6. Call `_agent_loop()`.
+7. On exit (success or exception): cancel the input monitor, stop the live panel.
 
-from __future__ import annotations
+### `Orchestrator._agent_loop(chat, state, input_queue)`
 
-from kresearch.commands.registry import command
+1. Send the initial message: `"Research this thoroughly: {query}"`.
+2. Enter an infinite loop:
+   - Check `input_queue` for user interrupts.
+   - Call `_process_response()` on the LLM's latest response.
+   - If `_process_response()` returns a string, that is the final report — return it.
+   - If the iteration budget is exceeded, call `_finalize()` to force a report.
+   - Otherwise, increment iteration and update the UI.
 
+### `Orchestrator._process_response(response, state, chat)`
 
-@command("mycommand", "Description of what it does")
-async def handle_mycommand(args: str, ctx: dict) -> None:
-    """Handle the /mycommand slash command."""
-    config = ctx["config"]
-    session = ctx.get("session")
+1. Track token usage from `response.usage`.
+2. **If no function calls:**
+   - If `state.draft_requested` is `True` and the response has text → return it (this is the report).
+   - If the response text is >500 chars → return it (the agent wrote the report without calling `draft_report()` explicitly).
+   - Otherwise → return `None` (continue the loop).
+3. **If function calls are present:**
+   - Execute ALL calls via `ToolRegistry.execute()`, collecting `(name, result)` pairs.
+   - Log each action to the UI and the `state.actions_log`.
+   - Send all results back in one batch via `chat.send_function_responses()`.
+   - If `state.draft_requested` and the response has text → return it.
+   - If the response has more function calls → **recurse** (handle them immediately).
+   - Otherwise → return `None`.
 
-    if not args:
-        # Show usage
-        print("Usage: /mycommand <argument>")
-        return
+### `Orchestrator._finalize(response, state, chat)`
 
-    # Implement your command logic
-    print(f"Running mycommand with: {args}")
+A fallback loop (max 5 rounds) that keeps processing tool calls and prompting until the agent produces final text. Used when:
+- The user typed `stop`.
+- The iteration budget was hit.
+
+This ensures the user always gets a report, even if the agent is mid-tool-call when interrupted.
+
+---
+
+## Adding a New Provider
+
+This is the most common extension. Here is a concrete walkthrough using OpenAI as the example.
+
+### Step 1: Create the provider module
+
+```
+src/kresearch/providers/openai/
+├── __init__.py       # from .provider import OpenaiProvider
+├── provider.py       # OpenaiProvider(ProviderInterface)
+└── chat.py           # OpenaiChatSession(ChatSession)
 ```
 
-3. **Add the import** to `kresearch/commands/registry.py`'s `_ensure_commands_loaded()` function
+### Step 2: Implement `ProviderInterface`
 
-The command is now available as `/mycommand` in the REPL and shows up in `/help`.
+In `provider.py`, implement all abstract methods. The key mapping:
+
+| Our interface | OpenAI SDK equivalent |
+|---|---|
+| `generate()` | `client.chat.completions.create()` |
+| `generate_stream()` | `client.chat.completions.create(stream=True)` |
+| `create_chat()` | Return an `OpenaiChatSession` that manages message history |
+| `list_models()` | `client.models.list()` |
+
+You must convert:
+- `ToolDeclaration` → the provider's function-calling format (e.g., OpenAI's `tools` parameter).
+- The provider's response → `GenerateResponse` (extract `text`, `function_calls`, `usage`).
+
+### Step 3: Implement `ChatSession`
+
+In `chat.py`, implement `send()`, `send_function_response()`, and override `send_function_responses()` if the provider supports batch function results in a single message.
+
+**Critical:** When the model returns multiple function calls, the orchestrator executes all of them and calls `send_function_responses()` with all results. If your provider requires them sent individually, the base class default handles that — but batch sending is more correct.
+
+### Step 4: Register the provider
+
+In `src/kresearch/providers/__init__.py`, add to `PROVIDER_REGISTRY`:
+
+```python
+PROVIDER_REGISTRY = {
+    "gemini": "kresearch.providers.gemini.provider.GeminiProvider",
+    "openai": "kresearch.providers.openai.provider.OpenaiProvider",  # ← add this
+    ...
+}
+```
+
+### Step 5: Add the SDK dependency
+
+In `pyproject.toml`:
+
+```toml
+[project.optional-dependencies]
+openai = ["openai>=1.0"]
+```
+
+### Step 6: Add the API key to config
+
+In `config.py`, add:
+
+```python
+openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
+```
+
+### Verification
+
+```bash
+pip install -e ".[openai]"
+export OPENAI_API_KEY=sk-...
+kresearch --provider openai --model gpt-4o "test query"
+kresearch --provider openai --list-models
+```
+
+**Zero changes** to the orchestrator, tools, system prompt, or UI.
+
+---
+
+## Adding a New Tool
+
+### Step 1: Create the tool file
+
+Create `src/kresearch/tools/your_tool.py`:
+
+```python
+"""Description of what this tool does."""
+
+from __future__ import annotations
+import asyncio
+from kresearch.providers.types import ToolDeclaration
+
+YOUR_TOOL_DECLARATION = ToolDeclaration(
+    name="your_tool_name",
+    description="Description the LLM sees when deciding whether to use this tool.",
+    parameters={
+        "type": "object",
+        "properties": {
+            "param1": {"type": "string", "description": "What this param is."},
+            "param2": {"type": "integer", "description": "What this param is."},
+        },
+        "required": ["param1"],
+    },
+)
+
+async def handle_your_tool(args: dict, **ctx) -> dict:
+    """Execute the tool. Must return a dict. Must never raise."""
+    # Access shared state if needed:
+    # state = ctx.get("state")   # ResearchState
+    # provider = ctx.get("provider")  # ProviderInterface
+    # config = ctx.get("config")  # KResearchConfig
+
+    param1 = args.get("param1", "")
+    param2 = args.get("param2", 10)
+
+    # For blocking operations, use asyncio.to_thread():
+    # result = await asyncio.to_thread(blocking_function, param1)
+
+    try:
+        # ... your logic ...
+        return {"result": "some data", "status": "ok"}
+    except Exception as e:
+        return {"error": str(e)}
+```
+
+### Step 2: Register it
+
+In `src/kresearch/tools/registry.py`, add to `create_default_registry()`:
+
+```python
+from kresearch.tools.your_tool import YOUR_TOOL_DECLARATION, handle_your_tool
+
+# In the tools list:
+("your_tool_name", handle_your_tool, YOUR_TOOL_DECLARATION),
+```
+
+### That's it
+
+The agent will automatically see the new tool in its function declarations and can decide to call it. No changes to the orchestrator, system prompt, or any other file. If you want the agent to know specific strategies for using your tool, add guidance to the `## TOOL REFERENCE` section in `prompts.py`.
+
+### Tool handler contract
+
+- **Signature:** `async def handler(args: dict, **ctx) -> dict`
+- **`args`:** The function arguments the LLM provided, as a plain dict.
+- **`ctx`:** Keyword arguments injected by the orchestrator: `state` (ResearchState), `provider` (ProviderInterface), `config` (KResearchConfig).
+- **Return:** Always a dict. On success, include whatever data is useful for the LLM. On failure, include `{"error": "description"}`.
+- **Exceptions:** Catch them. The registry has a safety net, but explicit handling produces better error messages for the LLM.
+- **Blocking I/O:** Wrap in `asyncio.to_thread()` to avoid blocking the event loop.
+
+---
+
+## Modifying the System Prompt
+
+The system prompt lives in `src/kresearch/prompts.py` as `SYSTEM_TEMPLATE`. It is a Python format string with these placeholders, filled at runtime by `Orchestrator._build_system_prompt()`:
+
+| Placeholder | Source |
+|---|---|
+| `{query}` | The user's research question |
+| `{mind_map_summary}` | `state.mind_map.get_summary()` — compact text tree of all findings |
+| `{gaps}` | `state.mind_map.get_gaps()` — topics with confidence < 0.3 |
+| `{contradictions}` | Count of unresolved contradictions |
+| `{source_count}` | Total sources across all mind map nodes |
+| `{iteration}` | Current iteration number |
+| `{max_iterations}` | Configured max, or "unlimited" |
+
+The prompt is injected once at chat creation as the `system_instruction`. It is **not** rebuilt each iteration — the mind map state is the agent's persistent memory that carries forward through tool calls.
+
+### Prompt structure
+
+1. **Identity and mandate** — "You are KResearch, an autonomous deep research agent..."
+2. **Five-phase methodology** — Decompose, Broad Search, Deep Reading, Verify, Synthesize
+3. **Tool reference** — When and how to use each tool, with best practices
+4. **Citation rules** — Non-negotiable; every factual claim must carry `[N]`
+5. **Report format** — Required structure: Executive Summary, thematic sections, Contradictions, Limitations, Sources
+6. **Quality standards** — Depth, specificity, structure, balance, honesty
+7. **Current state** — Dynamic section with the placeholders above
+
+When modifying the prompt, use `{{` and `}}` to include literal braces (since it's a Python format string). Test with a real query to verify the agent follows the updated instructions.
+
+---
+
+## Data Models
+
+### ResearchState (`models/state.py`)
+
+The top-level mutable object for one research session. Contains everything the orchestrator needs:
+
+| Field | Type | Purpose |
+|---|---|---|
+| `query` | `str` | The original user query |
+| `mind_map` | `MindMap` | Hierarchical findings tree |
+| `task_graph` | `TaskGraph` | Sub-task tracking |
+| `iteration` | `int` | Current loop iteration |
+| `max_iterations` | `int` | Budget (0 = unlimited) |
+| `actions_log` | `list[ActionLog]` | Timestamped log of every tool call |
+| `token_usage` | `TokenUsage` | Cumulative input/output token counts |
+| `subagent_results` | `list[str]` | Results from spawned sub-agents |
+| `draft_requested` | `bool` | Set to `True` when `draft_report()` is called |
+
+### MindMap (`models/mind_map.py`)
+
+A tree where each node represents a research topic:
+
+| Field | Type | Purpose |
+|---|---|---|
+| `MindMapNode.topic` | `str` | Topic name (e.g., "Quantum Hardware") |
+| `MindMapNode.content` | `str` | Accumulated findings text |
+| `MindMapNode.sources` | `list[Source]` | URLs + titles backing this topic |
+| `MindMapNode.confidence` | `float` | 0.0-1.0, highest confidence assigned |
+| `MindMapNode.children` | `list[MindMapNode]` | Sub-topics |
+| `MindMapNode.contradictions` | `list[Contradiction]` | Conflicting claims |
+
+Node lookup is case-insensitive. `find_or_create_node(topic)` searches the tree; if not found, creates a new child of the root.
+
+### TaskGraph (`models/task_graph.py`)
+
+Tracks sub-tasks for sub-agent spawning: `add_task()`, `complete_task()`, `fail_task()`, `get_pending()`.
 
 ---
 
 ## Testing
 
-### Manual Testing
-
 ```bash
-# Start REPL and test commands
-python -m kresearch
-/help
-/model list
-/search list
-/config
-/status
+# Run all tests
+pytest
 
-# Test with a simple query (requires at least one LLM + search provider)
-# Type a research query and observe 5-phase execution
+# Stop on first failure, short traceback
+pytest -x --tb=short
+
+# Run a specific test file
+pytest tests/test_mind_map.py
+
+# Run with verbose output
+pytest -v
 ```
 
-### Syntax Verification
+### Test fixtures (`tests/conftest.py`)
+
+| Fixture | Returns |
+|---|---|
+| `config` | `KResearchConfig(gemini_api_key="test-key")` |
+| `mind_map` | `MindMap.create("test query")` |
+| `state` | `ResearchState.create("test query", max_iterations=5)` |
+| `sample_source` | `Source(url="https://example.com", title="Example")` |
+
+### Integration testing
+
+For live API tests, set `GOOGLE_API_KEY` and run:
 
 ```bash
-# Verify all files parse correctly
-python -c "
-import ast, glob
-errors = []
-for f in sorted(glob.glob('kresearch/**/*.py', recursive=True)):
-    try:
-        ast.parse(open(f).read())
-    except SyntaxError as e:
-        errors.append(f'{f}: {e}')
-if errors:
-    for e in errors:
-        print(f'ERROR: {e}')
-else:
-    total = len(glob.glob('kresearch/**/*.py', recursive=True))
-    print(f'All {total} files pass syntax check')
-"
+kresearch --max-iterations 2 "What is quantum computing?"
 ```
 
-### Import Verification
-
-```bash
-# Verify all modules can be imported
-python -c "
-from kresearch.config import load_config
-from kresearch.core import EventBus, ResearchSession
-from kresearch.llm.models import ALL_MODELS
-from kresearch.search.models import SEARCH_PROVIDERS
-from kresearch.commands.registry import get_all_commands
-from kresearch.phases.runner import PhaseRunner
-from kresearch.export.manager import ExportManager
-from kresearch.sandbox.base import Sandbox, ExecutionResult
-from kresearch.rag.store import RAGStore
-from kresearch.telegram.formatter import escape_markdown
-from kresearch.ui.console import get_console
-print('All module imports successful')
-"
-```
-
-### Line Count Verification
-
-```bash
-# Ensure no file exceeds 150 lines
-find kresearch -name "*.py" -exec wc -l {} + | sort -rn | head -5
-find kresearch -name "*.py" -exec wc -l {} + | awk '$1 > 150 && !/total/ {print "VIOLATION:", $0}'
-```
+This runs a real research loop limited to 2 iterations — enough to verify the full pipeline (search, read, update findings, draft report) without excessive API usage.
 
 ---
 
-## Submitting Changes
+## Pull Request Guidelines
 
-### Pull Request Process
+1. **Keep changes focused.** One feature or fix per PR. If a PR touches the orchestrator, the system prompt, and two tools, it should probably be three PRs.
 
-1. **Ensure all checks pass**:
-   - All files parse without syntax errors
-   - All modules import successfully
-   - No file exceeds 150 lines
-   - Code follows the style guidelines
+2. **Respect the 150-line limit.** If your change pushes a file over 150 lines, refactor it into smaller modules.
 
-2. **Write a clear PR description**:
-   - What does this change do?
-   - Why is it needed?
-   - How was it tested?
+3. **Test your changes.** Add unit tests for new tools, providers, or model changes. For orchestrator changes, verify with a live `--max-iterations 2` run.
 
-3. **Keep PRs focused** -- One feature or fix per PR
+4. **Lint and type-check before pushing.**
+   ```bash
+   ruff check src/
+   mypy src/
+   ```
 
-4. **Update documentation** if your change adds new features, commands, or providers
+5. **Follow existing patterns.** Tool handlers return dicts. Providers implement the abstract interface. Models use Pydantic. Blocking I/O uses `asyncio.to_thread()`.
 
-### Commit Messages
+6. **Do not hardcode model IDs** in agent logic. Models are configuration — they go in `config.py` defaults or provider-level `DEFAULT_MODEL` constants.
 
-Use clear, descriptive commit messages:
+7. **Do not add provider-specific tool logic.** All tools must work identically regardless of which LLM provider is active. If you need provider-specific behaviour, it belongs in the provider layer.
 
-```
-feat: add Cohere LLM provider
-fix: handle timeout in DuckDuckGo search retry
-docs: add RAG configuration examples to README
-refactor: extract common httpx logic from OpenAI-compat providers
-```
+8. **Update the system prompt** if your new tool needs the agent to know specific usage strategies. The agent only knows what the `ToolDeclaration.description` and the system prompt tell it.
 
-### PR Checklist
-
-- [ ] All files are 150 lines or fewer
-- [ ] All syntax checks pass
-- [ ] All module imports work
-- [ ] New providers self-register at import time
-- [ ] New commands appear in `/help`
-- [ ] `.env.example` updated if new API keys are needed
-- [ ] Documentation updated if applicable
-
----
-
-## Reporting Issues
-
-When reporting a bug, please include:
-
-1. **Python version** (`python --version`)
-2. **OS** (macOS, Linux, Windows)
-3. **Steps to reproduce** the issue
-4. **Expected behavior** vs. **actual behavior**
-5. **Error output** (full traceback if available)
-6. **Configuration** (provider, model, search engine -- redact API keys)
-
-For feature requests, describe:
-
-1. **The use case** -- What are you trying to accomplish?
-2. **Current workaround** (if any)
-3. **Proposed solution** -- How would you like it to work?
-
----
-
-Thank you for contributing to KResearch!
+9. **Document architectural decisions** in your PR description. If you chose approach A over approach B, explain why.

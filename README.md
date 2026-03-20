@@ -1,649 +1,501 @@
 # KResearch
 
-**AI-Powered Deep Research Agent with the Omega Workflow**
+**Autonomous Deep Research Agent**
 
-KResearch is a terminal-based deep research agent that implements a full 5-phase "Omega Workflow" to produce comprehensive, citation-backed research reports. It supports 7 LLM providers, 7 search engines, local RAG with ChromaDB, code sandbox verification, Telegram bot integration, and a beautiful Rich terminal UI.
+```
+  ██╗  ██╗██████╗ ███████╗███████╗███████╗ █████╗ ██████╗  ██████╗██╗  ██╗
+  ██║ ██╔╝██╔══██╗██╔════╝██╔════╝██╔════╝██╔══██╗██╔══██╗██╔════╝██║  ██║
+  █████╔╝ ██████╔╝█████╗  ███████╗█████╗  ███████║██████╔╝██║     ███████║
+  ██╔═██╗ ██╔══██╗██╔══╝  ╚════██║██╔══╝  ██╔══██║██╔══██╗██║     ██╔══██║
+  ██║  ██╗██║  ██║███████╗███████║███████╗██║  ██║██║  ██║╚██████╗██║  ██║
+  ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚══════╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝
+```
+
+KResearch is an autonomous, provider-agnostic research agent that takes a plain-language question, conducts multi-source web research through an unrestricted reasoning loop, and produces a publication-quality report where **every factual claim is backed by an inline citation**. The agent is not a fixed pipeline — it freely decides what to search, what to read, when to verify, and when to stop. All tools (search, scraping, code execution) are implemented in Python and work with any LLM provider.
 
 ---
 
 ## Table of Contents
 
-- [Features](#features)
-- [Architecture](#architecture)
-- [The Omega Workflow](#the-omega-workflow)
-- [Quickstart](#quickstart)
-- [Configuration](#configuration)
-- [Slash Commands](#slash-commands)
-- [LLM Providers](#llm-providers)
-- [Search Providers](#search-providers)
-- [RAG (Local Knowledge Base)](#rag-local-knowledge-base)
-- [Code Sandbox](#code-sandbox)
-- [Telegram Integration](#telegram-integration)
-- [Project Structure](#project-structure)
+- [Key Principles](#key-principles)
+- [Quick Start](#quick-start)
+- [How the Agent Works](#how-the-agent-works)
+- [Tools](#tools)
+- [The Mind Map](#the-mind-map)
+- [Provider Abstraction](#provider-abstraction)
 - [Configuration Reference](#configuration-reference)
-- [Contributing](#contributing)
+- [CLI Reference](#cli-reference)
+- [Proxy Support](#proxy-support)
+- [Output Format](#output-format)
+- [Architecture](#architecture)
+- [Dependencies](#dependencies)
+- [Roadmap](#roadmap)
 - [License](#license)
+- [Support](#support)
 
 ---
 
-## Features
+## Key Principles
 
-- **5-Phase Omega Workflow** -- Intent parsing, swarm retrieval, verification, conflict resolution, and diffusion synthesis
-- **7 LLM Providers** -- OpenAI, Anthropic, Google Gemini, Grok (xAI), Perplexity, DeepSeek, Ollama (local)
-- **7 Search Providers** -- Tavily, DuckDuckGo (free), Jina (free), SerpAPI, Google CSE, BeautifulSoup scraper (free), Gemini Grounding
-- **Epistemic Mind Map** -- Directed graph of claims, concepts, and evidence with confidence tracking
-- **Task Graph DAG** -- Parallelizable research tasks with dependency chains
-- **Code Sandbox Verification** -- Execute Python to verify numerical and statistical claims (Docker or subprocess)
-- **Local RAG** -- Ingest documents into ChromaDB for retrieval-augmented research
-- **Telegram Bot** -- Monitor research progress and receive reports via Telegram
-- **Rich Terminal UI** -- Colored panels, progress bars, tree visualizations, and styled tables
-- **Export** -- Markdown and JSON report export with bibliography and metadata
-- **Async-First** -- Built on `asyncio` with per-provider semaphores and concurrent task execution
-- **Modular Architecture** -- Hexagonal (ports & adapters) design; every file stays under 150 lines
+1. **No hardcoded models.** Model IDs are configuration defaults, fetched and validated against the provider API at runtime. Two defaults are configured — a complex-task model (`gemini-3-flash-preview`) and a fast model (`gemini-3.1-flash-lite-preview`) — but the user can override either via CLI flags or environment variables.
 
----
+2. **No hardcoded tools.** Web search uses the `ddgs` library (DuckDuckGo), page scraping uses `trafilatura` with an `httpx`/`beautifulsoup4` fallback, and code execution uses a subprocess sandbox. None of these are tied to any provider's built-in features. The LLM calls Python functions via standard function-calling; our code executes them and returns results.
 
-## Architecture
+3. **No forced behaviour.** The agent's system prompt gives it a five-phase research methodology (Decompose, Search, Read, Verify, Synthesize), but it is not forced into any fixed order. It freely calls tools, revisits earlier phases, and decides when it has gathered enough evidence to write the report.
 
-KResearch follows a **hexagonal (ports & adapters)** architecture:
+4. **Interruptible.** While the agent loop is running, a concurrent `asyncio` task monitors `stdin`. The user can type `stop` to force immediate synthesis, or type any other message (e.g., "focus more on the economic impact") which is injected into the conversation as a `[USER INTERRUPT]`.
 
-```
-                        +-------------------+
-                        |   Terminal REPL   |
-                        |   (Rich UI)       |
-                        +--------+----------+
-                                 |
-                        +--------v----------+
-                        |   App / Commands  |
-                        +--------+----------+
-                                 |
-              +------------------+------------------+
-              |                  |                  |
-     +--------v------+  +-------v-------+  +-------v-------+
-     | LLM Providers |  | Search Provs  |  |   EventBus    |
-     | (7 adapters)  |  | (7 adapters)  |  | (pub/sub)     |
-     +--------+------+  +-------+-------+  +-------+-------+
-              |                  |                  |
-              +------------------+------------------+
-                                 |
-                        +--------v----------+
-                        |   Phase Runner    |
-                        | (5-phase pipeline)|
-                        +--------+----------+
-                                 |
-         +-----------+-----------+-----------+-----------+
-         |           |           |           |           |
-    +----v---+  +----v---+  +----v---+  +----v---+  +----v---+
-    |Phase 1 |  |Phase 2 |  |Phase 3 |  |Phase 4 |  |Phase 5 |
-    |Intent  |  |Swarm   |  |Verify  |  |Conflict|  |Synth   |
-    +--------+  +--------+  +----+---+  +--------+  +--------+
-                                 |
-                            +----v----+
-                            | Sandbox |
-                            +---------+
-```
+5. **Every sentence cited.** The system prompt enforces that every factual claim in the final report carries an inline citation `[N]` linking to a numbered source at the bottom. The agent is instructed to omit any claim it cannot cite.
 
-**Shared State**: A `ResearchSession` object flows through all 5 phases, carrying the mind map, task graph, and accumulated evidence.
-
-**Event Bus**: Async pub/sub decouples UI rendering and Telegram notifications from core logic.
+6. **Plain text copyable.** The Rich library is used only for the live progress panel in the terminal. The report itself is clean Markdown that can be copied, piped, or saved to a file without any formatting artifacts.
 
 ---
 
-## The Omega Workflow
-
-### Phase 1: Metacognitive Intent Parsing
-
-1. LLM analyzes the query to extract structured intent (topic, sub-questions, complexity, research type)
-2. STORM-style perspective discovery generates 3--6 expert viewpoints with persona-specific questions
-3. Builds a TaskGraph DAG with SEARCH, DISCOURSE, and VERIFY tasks linked by dependencies
-4. Initializes the Epistemic Mind Map skeleton (root node, perspectives, sub-questions -- all UNVERIFIED)
-
-### Phase 2: Decentralized Swarm Retrieval
-
-1. SwarmCoordinator processes the TaskGraph in topological layers
-2. `asyncio.gather(return_exceptions=True)` provides partial-failure tolerance
-3. Per-provider semaphores enforce rate limits (e.g., Tavily=5, DuckDuckGo=10) with a global cap (15)
-4. Complex nodes trigger multi-turn discourse (expert vs. interrogator, 3--5 turns)
-5. Context compactor summarizes and deduplicates results into the Mind Map
-
-### Phase 3: Turing-Complete Verification
-
-1. Extracts verifiable claims from the Mind Map (numerical, computational, statistical, factual)
-2. Routes claims to specialized verifiers:
-   - **Numerical/Computational** -- LLM generates Python code, executed in sandbox
-   - **Statistical** -- Standard-library stats verification in sandbox
-   - **Factual** -- Cross-reference via web search
-3. RL-style retry: if verification code errors, the error is fed back to the LLM for code rewriting (up to 3 attempts)
-4. Updates Mind Map confidence levels based on verification outcomes
-
-### Phase 4: Epistemic Conflict Resolution
-
-1. Detects contradictions across Mind Map nodes (conflicting claims from different sources)
-2. Runs a 7-level consistency check: logical, temporal, numerical, source, perspective, evidential, inferential
-3. Source hierarchy ranking: peer-reviewed (5) > government (4) > news (3) > blogs (2) > social/forums (1)
-4. Markov-style resolution using transition probabilities from credibility, recency, and corroboration
-5. Winning claims gain higher confidence; rejected claims are marked CONTESTED with explanations
-
-### Phase 5: Draft-Centric Diffusion Synthesis
-
-1. Builds a structural skeleton by grouping Mind Map nodes into thematic clusters
-2. Iterative "denoising" loop: rough draft, expand with evidence, improve flow, add citations
-3. External evaluation model scores each iteration on 5 dimensions (accuracy, completeness, coherence, citations, balance)
-4. Loops until all scores meet the configurable threshold (default: 7.0/10) or max iterations reached
-5. Finalizer compiles the report with bibliography, metadata header, and numbered citations
-
----
-
-## Quickstart
+## Quick Start
 
 ### Prerequisites
 
-- Python 3.11 or later
-- At least one LLM API key (or Ollama running locally)
+- Python 3.10 or later
+- A Google Gemini API key (get one at [ai.google.dev](https://ai.google.dev/gemini-api/docs/api-key))
 
 ### Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/kresearch.git
+git clone https://github.com/KuekHaoYang/KResearch.git
 cd kresearch
-
-# Create a virtual environment
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-
-# Install dependencies
 pip install -e .
-# Or: pip install -r requirements.txt
 ```
 
-### Set Up API Keys
+### Set your API key
 
 ```bash
-# Copy the environment template
-cp .env.example .env
-
-# Edit .env and add your API keys
-# At minimum, set one LLM provider key (e.g., OPENAI_API_KEY)
-# DuckDuckGo search works without any key
+export GOOGLE_API_KEY=your-key-here
 ```
 
-### Run
+Or create a `.env` file in the project root (see `.env.example`):
+
+```
+GOOGLE_API_KEY=your-key-here
+```
+
+### Run a research query
 
 ```bash
-# Start the REPL
-python -m kresearch
-
-# Or use the installed command
-kresearch
+kresearch "What are the latest breakthroughs in quantum computing?"
 ```
 
-You will see the KResearch banner:
-
-```
-╭──────────────────────────────────────────────────────────────╮
-│                                                              │
-│  KResearch v0.1.0                                            │
-│  Deep Research Agent -- Omega Workflow                       │
-│                                                              │
-│  Type a research query to begin, or /help for commands.      │
-│                                                              │
-╰──────────────────────────────────────────────────────────────╯
-```
-
-### Run Your First Research
-
-Simply type a research question:
-
-```
-kresearch> What are the environmental and economic trade-offs of nuclear fusion energy?
-```
-
-KResearch will execute all 5 phases automatically, showing real-time progress in the terminal, and produce a comprehensive report.
-
----
-
-## Configuration
-
-KResearch uses a layered configuration system:
-
-```
-Hardcoded Defaults  -->  ~/.kresearch/config.yaml  -->  .env  -->  Environment Variables  -->  Runtime /commands
-```
-
-Each layer overrides the previous one.
-
-### Config File
-
-Create `~/.kresearch/config.yaml`:
-
-```yaml
-llm:
-  provider: openai
-  model: gpt-4o
-  temperature: 0.2
-  max_tokens: 4096
-
-search:
-  provider: duckduckgo
-  max_results: 10
-  timeout: 30
-
-rag:
-  collection_name: kresearch
-  chunk_size: 1000
-  chunk_overlap: 200
-  top_k: 5
-
-sandbox:
-  prefer_docker: true
-  timeout: 60
-  max_retries: 3
-
-concurrency:
-  global_limit: 15
-  per_provider_limits:
-    tavily: 5
-    duckduckgo: 10
-
-eval:
-  min_score: 7.0
-  max_iterations: 5
-
-output_dir: output
-```
-
-### Environment Variable Overrides
-
-Use the `KRESEARCH_` prefix:
+### Other common commands
 
 ```bash
-export KRESEARCH_LLM_MODEL=gpt-4o-mini
-export KRESEARCH_SEARCH_PROVIDER=tavily
-export KRESEARCH_OUTPUT_DIR=/path/to/reports
+# List all models available from the provider API
+kresearch --list-models
+
+# Use a specific model
+kresearch --model gemini-3.1-pro-preview "your query"
+
+# Save the report to a file
+kresearch -o report.md "your query"
+
+# Remove the iteration safety limit (agent runs until it decides to stop)
+kresearch --max-iterations 0 "your query"
+
+# Run through a proxy
+kresearch --proxy http://127.0.0.1:7890 "your query"
 ```
 
 ---
 
-## Slash Commands
+## How the Agent Works
 
-| Command | Description | Example |
+### The Autonomous Loop
+
+```
+User Query
+     │
+     ▼
+┌──────────────────────────────────────────────────────────────┐
+│                     AUTONOMOUS LOOP                          │
+│                                                              │
+│  The LLM sits in a multi-turn chat with function-calling     │
+│  tools. It FREELY decides what to call and when.             │
+│                                                              │
+│  Loop:                                                       │
+│  1. LLM receives: system prompt + current mind map state     │
+│  2. LLM responds with either:                                │
+│     a. Tool calls → orchestrator executes them →             │
+│        all results sent back in one batch → repeat           │
+│     b. Final text (after draft_report()) → this IS the       │
+│        report → done                                         │
+│                                                              │
+│  Termination (checked in this order):                        │
+│  1. Agent calls draft_report() → it decided to stop         │
+│  2. User sends "stop" via stdin → forced synthesis           │
+│  3. Safety limit reached (default 20 iterations,             │
+│     configurable, set to 0 for unlimited)                    │
+└──────────────────────────────────────────────────────────────┘
+     │
+     ▼
+Final Report (Markdown with inline citations)
+```
+
+### The System Prompt
+
+The system prompt (`src/kresearch/prompts.py`) is a ~7,000-character document that gives the agent a five-phase research methodology:
+
+| Phase | What the agent does |
+|---|---|
+| **1. Decompose** | Break the query into 3-7 sub-questions covering What, Why, How, Who, When, debates, and implications. |
+| **2. Broad Search** | For each sub-question, run `web_search` with diverse queries — literal, rephrased, academic, counterargument, data-seeking. Never repeat a query. |
+| **3. Deep Reading** | Use `read_webpage` on the 5-10 most authoritative results. Prefer primary sources (papers, official reports) over secondary. Read full articles, not just snippets. |
+| **4. Verify** | Cross-reference claims across 2+ independent sources. Call `log_contradiction` for disagreements. Use `execute_python` for math/data verification. Assign confidence scores honestly (0.9+ requires 3+ reliable sources agreeing). |
+| **5. Synthesize** | Call `update_findings` for each topic, then `draft_report()`. Write the complete report as the next response. |
+
+The prompt also contains strict citation rules (every factual claim must carry `[N]`), a required report structure (Executive Summary, thematic sections, Contradictions & Debates, Limitations, Sources), and quality standards (depth, specificity, balance, honesty).
+
+### Batch Function Responses
+
+When the LLM returns multiple tool calls in a single response, the orchestrator executes all of them concurrently, then sends **all results back in a single message**. This is the correct behaviour for the Gemini API (and is handled by `ChatSession.send_function_responses()`). Providers that do not support batch responses fall back to sending results one at a time.
+
+### User Interrupts
+
+While the agent loop runs, a separate `asyncio` task polls `stdin` using `select()` (non-blocking, 300ms intervals):
+
+- **`stop` / `quit` / `done`** — The agent is told to call `draft_report()` and write the best report it can with current findings.
+- **Any other text** — Injected into the conversation as `[USER INTERRUPT]: <message>`. The agent sees it and adjusts its research direction.
+
+---
+
+## Tools
+
+All tools are provider-agnostic Python functions, registered via `ToolRegistry` and exposed to the LLM through standard function-calling declarations. The agent discovers tools automatically from the registry — adding a new tool requires zero changes to the agent loop.
+
+| Tool | Implementation | Purpose |
 |---|---|---|
-| `/model list` | List all LLM providers and models | `/model list` |
-| `/model <provider> [model]` | Switch LLM provider/model | `/model anthropic claude-sonnet-4-20250514` |
-| `/search list` | List all search providers | `/search list` |
-| `/search <provider>` | Switch search provider | `/search duckduckgo` |
-| `/config` | View current configuration | `/config` |
-| `/config <key> <value>` | Set a config value | `/config eval.min_score 8.0` |
-| `/export md [path]` | Export report as Markdown | `/export md ./report.md` |
-| `/export json [path]` | Export report as JSON | `/export json` |
-| `/rag ingest <path>` | Ingest files into ChromaDB | `/rag ingest ./papers/` |
-| `/rag search <query>` | Query local vector store | `/rag search "fusion energy"` |
-| `/rag status` | Show RAG store statistics | `/rag status` |
-| `/status` | Show current session progress | `/status` |
-| `/session info` | Current session details | `/session info` |
-| `/session export` | Export session state to JSON | `/session export` |
-| `/session reset` | Clear current session | `/session reset` |
-| `/help` | Show all commands | `/help` |
-| `/quit` | Exit KResearch | `/quit` |
+| `web_search(query, max_results)` | `ddgs` library (DuckDuckGo Search) | Free, no-API-key web search. Returns `{title, url, snippet}` for each result. Max 20 results per call. |
+| `read_webpage(url)` | `trafilatura` primary, `httpx` + `beautifulsoup4` fallback | Fetches a URL and extracts the main article content as clean Markdown. Strips navigation, scripts, ads. Truncates at 15,000 chars to protect context. |
+| `execute_python(code, timeout)` | `subprocess.run()` in a restricted environment | Runs Python code in an isolated subprocess with a 30-second timeout and a restricted `PATH`. Used for math verification, data analysis, and fact-checking. |
+| `update_findings(topic, content, sources, confidence)` | Writes to the `MindMap` data structure | Records a verified finding under a topic node with source URLs and a confidence score (0.0-1.0). The agent calls this frequently to build its working memory. |
+| `log_contradiction(topic, claim_a, claim_b, source_a, source_b)` | Writes to the `MindMap` data structure | Records a conflict between two sources. The agent is instructed to never ignore contradictions — they must appear in the final report. |
+| `spawn_subagent(query, context)` | Creates a new `ChatSession` with a focused system prompt | Launches an independent sub-agent that runs its own mini research loop (max 5 iterations, no further sub-spawning). Returns structured findings. Used for clearly independent sub-questions. |
+| `draft_report()` | Sets `state.draft_requested = True`, returns mind map JSON | Signals the agent is ready to write the final report. Returns the complete mind map data so the agent can reference it while writing. The agent's next text response becomes the report. |
+
+### Why not use provider built-in tools?
+
+Gemini has built-in `google_search` and `code_execution`. OpenAI has `code_interpreter`. But each provider's built-in tools are different, and some providers have none. By implementing all tools in Python, KResearch's tool set is identical regardless of which LLM backend is used. Switching from Gemini to OpenAI to Anthropic requires zero changes to the tool layer.
 
 ---
 
-## LLM Providers
+## The Mind Map
 
-| Provider | SDK | Models | API Key Env Var | Special |
-|---|---|---|---|---|
-| **OpenAI** | `openai` | gpt-4o, gpt-4o-mini, o3-mini | `OPENAI_API_KEY` | JSON mode |
-| **Anthropic** | `anthropic` | claude-sonnet-4-20250514, claude-haiku-4-5-20251001 | `ANTHROPIC_API_KEY` | -- |
-| **Gemini** | `google-generativeai` | gemini-2.0-flash, gemini-2.5-pro | `GOOGLE_API_KEY` | Grounding, JSON mode |
-| **Grok** | `httpx` (OpenAI-compat) | grok-3, grok-3-mini | `XAI_API_KEY` | -- |
-| **Perplexity** | `httpx` (OpenAI-compat) | sonar, sonar-pro | `PERPLEXITY_API_KEY` | Search-augmented |
-| **DeepSeek** | `httpx` (OpenAI-compat) | deepseek-chat, deepseek-reasoner | `DEEPSEEK_API_KEY` | JSON mode |
-| **Ollama** | `ollama` | llama3, mistral, phi3, gemma | *(none -- local)* | Local inference |
+The mind map (`src/kresearch/models/mind_map.py`) is the agent's **persistent epistemic state** — a hierarchical tree of everything it knows, structured by topic. Even if the LLM's conversation history gets long, the mind map retains all findings in a compact format that is included in the system prompt.
 
-### Switching Providers at Runtime
+### Structure
 
 ```
-kresearch> /model openai gpt-4o-mini
-Switched to openai / gpt-4o-mini
-
-kresearch> /model ollama llama3
-Switched to ollama / llama3
+MindMap
+├── root: MindMapNode (topic = the original query)
+│   ├── child: MindMapNode (topic = "Quantum Hardware")
+│   │   ├── content: "IBM unveiled Nighthawk, a 120-qubit processor..."
+│   │   ├── sources: [{url, title}, {url, title}]
+│   │   ├── confidence: 0.95
+│   │   └── contradictions: []
+│   ├── child: MindMapNode (topic = "Error Correction")
+│   │   ├── content: "Google's Willow chip operates below threshold..."
+│   │   ├── sources: [{url, title}, {url, title}, {url, title}]
+│   │   ├── confidence: 0.98
+│   │   └── contradictions: [Contradiction(...)]
+│   └── ...
+└── query: "What are the latest breakthroughs in quantum computing?"
 ```
+
+### Key methods
+
+- `add_finding(topic, content, sources, confidence)` — Finds or creates a topic node and appends the finding. Content is accumulated (not replaced), sources are extended, confidence takes the max.
+- `log_contradiction(topic, claim_a, claim_b, source_a, source_b)` — Attaches a `Contradiction` record to the topic node.
+- `get_summary()` — Returns a compact text tree used in the system prompt so the agent knows its current state.
+- `get_gaps()` — Returns topics with confidence below 0.3 (areas needing more research).
+- `get_contradictions()` — Returns all unresolved contradictions across the entire tree.
+- `source_count()` — Total number of sources across all nodes.
 
 ---
 
-## Search Providers
+## Provider Abstraction
 
-| Provider | Cost | API Key | Description |
+KResearch is designed to work with any LLM that supports function calling. The provider layer (`src/kresearch/providers/`) defines two abstract base classes:
+
+### `ProviderInterface`
+
+Every provider must implement:
+
+| Method | Description |
+|---|---|
+| `generate(messages, system_instruction, tools, thinking_level)` | One-shot generation with optional tool declarations. |
+| `generate_stream(messages, ...)` | Streaming generation (yields text chunks). |
+| `create_chat(system_instruction, tools, thinking_level)` | Creates a multi-turn `ChatSession` — the primary interface used by the orchestrator. |
+| `list_models()` | Fetches available models from the provider API. Returns `list[ModelInfo]`. |
+
+### `ChatSession`
+
+The multi-turn chat interface used by the agent loop:
+
+| Method | Description |
+|---|---|
+| `send(message)` | Send a user message, returns `GenerateResponse` with text and/or function calls. |
+| `send_function_response(name, response)` | Send a single tool result back to the model. |
+| `send_function_responses(responses)` | Send multiple tool results in one batch (providers should override for correctness). |
+| `get_history()` | Return the conversation history. |
+
+### Provider-agnostic types
+
+All types are defined in `src/kresearch/providers/types.py`:
+
+- `Message` — role + content
+- `FunctionCall` — name + args dict
+- `GenerateResponse` — text, function_calls, thinking, usage, raw
+- `ModelInfo` — id, name, context_window
+- `ToolDeclaration` — name, description, parameters (JSON Schema)
+
+### Current providers
+
+| Provider | Status | Default model | Fast model |
 |---|---|---|---|
-| **DuckDuckGo** | Free | *(none)* | Default. No API key needed. Includes retry and back-off. |
-| **Jina Reader** | Free tier | `JINA_API_KEY` *(optional)* | Web reader/search via Jina AI |
-| **Scraper** | Free | *(none)* | Direct scraping with aiohttp + BeautifulSoup4 |
-| **Tavily** | Paid | `TAVILY_API_KEY` | AI-optimized search API |
-| **SerpAPI** | Paid | `SERPAPI_KEY` | Google results proxy |
-| **Google CSE** | Paid | `GOOGLE_API_KEY` + `GOOGLE_CSE_ID` | Google Custom Search Engine |
-| **Gemini Grounding** | Paid | `GOOGLE_API_KEY` | Search via Gemini API grounding |
+| **Gemini** | Fully implemented | `gemini-3-flash-preview` | `gemini-3.1-flash-lite-preview` |
+| OpenAI | Placeholder (not yet implemented) | `gpt-4o` | `gpt-4o-mini` |
+| Anthropic | Placeholder (not yet implemented) | `claude-sonnet-4-6` | `claude-haiku-4-5` |
+| xAI | Placeholder (not yet implemented) | `grok-3` | `grok-3-fast` |
+| Perplexity | Placeholder (not yet implemented) | `sonar-pro` | `sonar` |
 
-### Zero-Cost Setup
-
-KResearch works with zero API spend using:
-- **Ollama** for LLM (runs locally)
-- **DuckDuckGo** for search (free, no key)
-
-```bash
-# Install Ollama (https://ollama.com)
-ollama pull llama3
-
-# Run KResearch with free providers
-python -m kresearch
-/model ollama llama3
-/search duckduckgo
-```
-
----
-
-## RAG (Local Knowledge Base)
-
-Ingest your own documents into a local ChromaDB vector store for retrieval-augmented research.
-
-### Supported Formats
-
-- `.txt` -- Plain text
-- `.md` -- Markdown
-- `.json` -- JSON documents
-- `.pdf` -- PDF text extraction
-
-### Usage
-
-```
-# Ingest a single file
-kresearch> /rag ingest ./papers/fusion_energy.pdf
-
-# Ingest an entire directory (recursive)
-kresearch> /rag ingest ./research_papers/
-
-# Search the local store
-kresearch> /rag search "tokamak confinement time"
-
-# Check store statistics
-kresearch> /rag status
-```
-
-Documents are chunked (default: 1000 chars, 200 overlap) and embedded using `all-MiniLM-L6-v2` via sentence-transformers. The store persists at `~/.kresearch/chromadb/`.
-
----
-
-## Code Sandbox
-
-Phase 3 executes LLM-generated Python to verify claims. The sandbox supports two modes:
-
-| Mode | Isolation | Setup |
-|---|---|---|
-| **Docker** (preferred) | Full container isolation, network disabled, 256MB memory limit | `docker` must be installed and running |
-| **Subprocess** (fallback) | Process-level isolation with timeout | No setup needed |
-
-Auto-detection: KResearch checks if Docker is available at startup. If not, it falls back to subprocess.
-
-```yaml
-# config.yaml
-sandbox:
-  prefer_docker: true   # Set false to always use subprocess
-  timeout: 60           # Execution timeout in seconds
-  max_retries: 3        # Retry count for failed verifications
-```
-
----
-
-## Telegram Integration
-
-Receive real-time research updates and reports via Telegram.
-
-### Setup
-
-1. Create a bot via [@BotFather](https://t.me/BotFather) and get the token
-2. Get your chat ID (message [@userinfobot](https://t.me/userinfobot))
-3. Add to `.env`:
-
-```bash
-TELEGRAM_BOT_TOKEN=your_bot_token
-TELEGRAM_CHAT_ID=your_chat_id
-```
-
-4. Enable in config:
-
-```yaml
-telegram:
-  enabled: true
-```
-
-### Bot Commands
-
-- `/start` -- Welcome message
-- `/research <query>` -- Start a research session
-- `/status` -- Check current progress
-- `/cancel` -- Cancel current research
-
-The bot sends updates for each phase start/complete and delivers a summary of the final report.
-
----
-
-## Project Structure
-
-```
-kresearch/
-├── pyproject.toml                  # Project metadata and dependencies
-├── requirements.txt                # Pip requirements
-├── .env.example                    # API key template
-├── README.md                       # This file
-├── LICENSE                         # MIT License
-├── CONTRIBUTING.md                 # Contribution guidelines
-│
-└── kresearch/
-    ├── __init__.py                 # Package version
-    ├── __main__.py                 # Entry point (python -m kresearch)
-    ├── app.py                      # Async REPL and orchestrator
-    ├── constants.py                # Enums and constants
-    │
-    ├── config/                     # Configuration management
-    │   ├── schema.py               #   Pydantic config models
-    │   ├── loader.py               #   YAML/env/defaults merger
-    │   └── defaults.py             #   Default values
-    │
-    ├── core/                       # Core data structures
-    │   ├── session.py              #   ResearchSession container
-    │   ├── mind_map.py             #   EpistemicMindMap (directed graph)
-    │   ├── mind_map_node.py        #   MindMapNode with confidence levels
-    │   ├── task_graph.py           #   TaskGraph DAG
-    │   ├── task_node.py            #   TaskNode with dependencies
-    │   ├── evidence.py             #   Source and Evidence models
-    │   ├── message.py              #   LLM message types
-    │   └── event_bus.py            #   Async pub/sub event bus
-    │
-    ├── llm/                        # LLM provider adapters (7)
-    │   ├── base.py                 #   Abstract LLMProvider
-    │   ├── factory.py              #   Provider factory
-    │   ├── registry.py             #   Provider registry
-    │   ├── models.py               #   Model name constants
-    │   ├── openai_provider.py      #   OpenAI (AsyncOpenAI SDK)
-    │   ├── anthropic_provider.py   #   Anthropic (AsyncAnthropic SDK)
-    │   ├── gemini_provider.py      #   Google Gemini (generativeai SDK)
-    │   ├── grok_provider.py        #   xAI Grok (httpx, OpenAI-compat)
-    │   ├── perplexity_provider.py  #   Perplexity (httpx, OpenAI-compat)
-    │   ├── deepseek_provider.py    #   DeepSeek (httpx, OpenAI-compat)
-    │   └── ollama_provider.py      #   Ollama (ollama SDK, local)
-    │
-    ├── search/                     # Search provider adapters (7)
-    │   ├── base.py                 #   Abstract SearchProvider
-    │   ├── factory.py              #   Provider factory
-    │   ├── registry.py             #   Provider registry
-    │   ├── models.py               #   SearchResult model
-    │   ├── tavily_provider.py      #   Tavily (paid)
-    │   ├── duckduckgo_provider.py  #   DuckDuckGo (free, default)
-    │   ├── jina_provider.py        #   Jina Reader (free tier)
-    │   ├── serpapi_provider.py     #   SerpAPI (paid)
-    │   ├── google_cse_provider.py  #   Google CSE (paid)
-    │   ├── scraper_provider.py     #   BeautifulSoup scraper (free)
-    │   └── gemini_grounding.py     #   Gemini Grounding (paid)
-    │
-    ├── phases/                     # 5-phase Omega Workflow
-    │   ├── base.py                 #   Abstract Phase class
-    │   ├── runner.py               #   PhaseRunner orchestrator
-    │   ├── phase1/                 #   Metacognitive Intent Parsing
-    │   │   ├── intent_parser.py
-    │   │   ├── perspective_discovery.py
-    │   │   ├── task_graph_builder.py
-    │   │   └── mind_map_initializer.py
-    │   ├── phase2/                 #   Decentralized Swarm Retrieval
-    │   │   ├── swarm_coordinator.py
-    │   │   ├── retrieval_agent.py
-    │   │   ├── discourse_engine.py
-    │   │   ├── context_compactor.py
-    │   │   └── mcp_retrieval.py
-    │   ├── phase3/                 #   Turing-Complete Verification
-    │   │   ├── verification_engine.py
-    │   │   ├── claim_extractor.py
-    │   │   ├── code_verifier.py
-    │   │   ├── data_verifier.py
-    │   │   └── statistical_analyzer.py
-    │   ├── phase4/                 #   Epistemic Conflict Resolution
-    │   │   ├── conflict_detector.py
-    │   │   ├── consistency_checker.py
-    │   │   ├── source_hierarchy.py
-    │   │   └── markov_resolver.py
-    │   └── phase5/                 #   Draft-Centric Diffusion Synthesis
-    │       ├── skeleton_builder.py
-    │       ├── diffusion_writer.py
-    │       ├── evaluation_loop.py
-    │       └── finalizer.py
-    │
-    ├── rag/                        # Retrieval-Augmented Generation
-    │   ├── store.py                #   ChromaDB vector store
-    │   ├── embeddings.py           #   Embedding functions
-    │   ├── chunker.py              #   Text chunking
-    │   ├── ingester.py             #   File/directory ingestion
-    │   └── retriever.py            #   RAG query interface
-    │
-    ├── sandbox/                    # Code execution sandbox
-    │   ├── base.py                 #   Abstract Sandbox + ExecutionResult
-    │   ├── detector.py             #   Docker auto-detection
-    │   ├── subprocess_sandbox.py   #   Subprocess-based sandbox
-    │   ├── docker_sandbox.py       #   Docker-based sandbox
-    │   └── factory.py              #   Sandbox factory
-    │
-    ├── ui/                         # Rich terminal UI
-    │   ├── theme.py                #   Color theme
-    │   ├── console.py              #   Singleton console
-    │   ├── display.py              #   DisplayManager (event-driven)
-    │   ├── panels.py               #   Rich panel builders
-    │   ├── progress.py             #   Progress bars
-    │   ├── phase_display.py        #   Phase-specific rendering
-    │   ├── mind_map_display.py     #   Mind map tree visualization
-    │   └── input_handler.py        #   Input handling
-    │
-    ├── commands/                   # Slash command handlers
-    │   ├── registry.py             #   Command registry + @command decorator
-    │   ├── model_cmd.py            #   /model
-    │   ├── search_cmd.py           #   /search
-    │   ├── config_cmd.py           #   /config
-    │   ├── export_cmd.py           #   /export
-    │   ├── status_cmd.py           #   /status
-    │   ├── help_cmd.py             #   /help
-    │   ├── rag_cmd.py              #   /rag
-    │   └── session_cmd.py          #   /session
-    │
-    ├── export/                     # Report exporters
-    │   ├── base.py                 #   Abstract Exporter
-    │   ├── markdown_exporter.py    #   Markdown with TOC + bibliography
-    │   ├── json_exporter.py        #   Full JSON session export
-    │   └── manager.py              #   ExportManager
-    │
-    ├── telegram/                   # Telegram bot integration
-    │   ├── bot.py                  #   TelegramBot class
-    │   ├── handlers.py             #   Command handlers
-    │   ├── formatter.py            #   Message formatting
-    │   └── bridge.py               #   EventBus-to-Telegram bridge
-    │
-    └── utils/                      # Shared utilities
-        ├── text.py                 #   Text processing (truncate, slugify, JSON extraction)
-        ├── async_helpers.py        #   Async utilities (gather_with_limit, semaphores)
-        ├── retry.py                #   Retry with exponential back-off
-        ├── rate_limiter.py         #   Rate limiter + token bucket
-        ├── logger.py               #   Rich-powered logging
-        └── validators.py           #   Input validation
-```
-
-**119 Python files** -- every single file is **150 lines or fewer**.
+Adding a new provider requires implementing `ProviderInterface` and `ChatSession`, registering it in `providers/__init__.py`, and optionally adding the SDK as an optional dependency in `pyproject.toml`. Zero changes to the orchestrator, tools, or agent logic.
 
 ---
 
 ## Configuration Reference
 
-### LLMConfig
+Configuration is handled by `KResearchConfig` (Pydantic Settings), loaded from environment variables, a `.env` file, and CLI overrides (CLI takes priority).
 
-| Key | Type | Default | Description |
+| Variable | CLI Flag | Default | Description |
 |---|---|---|---|
-| `provider` | `str` | `"openai"` | LLM provider name |
-| `model` | `str` | `"gpt-4o"` | Model identifier |
-| `temperature` | `float` | `0.2` | Sampling temperature (0.0--2.0) |
-| `max_tokens` | `int` | `4096` | Maximum tokens in response |
-| `api_base` | `str \| null` | `null` | Custom API base URL |
+| `GOOGLE_API_KEY` | — | *(required)* | Gemini API key. |
+| `KRESEARCH_PROVIDER` | `--provider` | `gemini` | LLM provider name. |
+| `KRESEARCH_MODEL` | `--model` | `gemini-3-flash-preview` | Primary model for the agent loop. |
+| `KRESEARCH_FAST_MODEL` | `--fast-model` | `gemini-3.1-flash-lite-preview` | Fast model for sub-agents. |
+| `KRESEARCH_PROXY` | `--proxy` | — | Global HTTP proxy for all outbound requests. |
+| `KRESEARCH_GEMINI_PROXY` | — | — | Proxy override for the Gemini provider only. |
+| `KRESEARCH_OPENAI_PROXY` | — | — | Proxy override for the OpenAI provider only. |
+| `KRESEARCH_MAX_ITERATIONS` | `--max-iterations` | `20` | Safety limit on agent loop iterations. Set to `0` for unlimited. |
+| `KRESEARCH_MAX_CONCURRENT_SUBAGENTS` | — | `3` | Maximum number of concurrent sub-agents. |
+| `KRESEARCH_THINKING_LEVEL` | — | `high` | Thinking level passed to providers that support it. |
+| `KRESEARCH_VERBOSE` | `--verbose` | `false` | Enable verbose logging. |
+| `KRESEARCH_OUTPUT_DIR` | — | `.` | Default directory for saved reports. |
 
-### SearchConfig
+### Priority order
 
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `provider` | `str` | `"tavily"` | Search provider name |
-| `max_results` | `int` | `10` | Max results per query |
-| `timeout` | `int` | `30` | Request timeout in seconds |
+CLI flags > environment variables > `.env` file > defaults.
 
-### RAGConfig
+### Proxy resolution
 
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `collection_name` | `str` | `"kresearch"` | ChromaDB collection name |
-| `chunk_size` | `int` | `1000` | Chunk size in characters |
-| `chunk_overlap` | `int` | `200` | Overlap between chunks |
-| `top_k` | `int` | `5` | Number of chunks to retrieve |
-
-### SandboxConfig
-
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `prefer_docker` | `bool` | `true` | Prefer Docker over subprocess |
-| `timeout` | `int` | `60` | Execution timeout in seconds |
-| `max_retries` | `int` | `3` | Max retries on failure |
-
-### EvalConfig
-
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `min_score` | `float` | `7.0` | Minimum acceptable evaluation score (1--10) |
-| `max_iterations` | `int` | `5` | Max draft refinement iterations |
-
-### ConcurrencyConfig
-
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `global_limit` | `int` | `15` | Maximum concurrent tasks |
-| `per_provider_limits` | `dict` | `{}` | Per-provider limits (e.g., `{tavily: 5}`) |
-
-### TelegramConfig
-
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `bot_token` | `str \| null` | `null` | Telegram bot token |
-| `chat_id` | `str \| null` | `null` | Default chat ID |
-| `enabled` | `bool` | `false` | Enable Telegram integration |
+When multiple proxies are configured, KResearch uses the most specific one. For example, if both `KRESEARCH_PROXY` and `KRESEARCH_GEMINI_PROXY` are set, the Gemini provider uses `KRESEARCH_GEMINI_PROXY` while web scraping tools use `KRESEARCH_PROXY`.
 
 ---
 
-## Contributing
+## CLI Reference
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute to KResearch.
+```
+kresearch [OPTIONS] [QUERY]
+
+Arguments:
+  QUERY                    The research question (omit for usage info).
+
+Options:
+  --model TEXT              Override the primary model.
+  --fast-model TEXT         Override the fast/sub-agent model.
+  --provider TEXT           LLM provider (gemini, openai, anthropic, xai, perplexity).
+  --proxy TEXT              HTTP proxy URL (e.g., http://127.0.0.1:7890).
+  --list-models             Fetch and display available models from the API.
+  --verbose                 Enable verbose logging.
+  -o, --output PATH         Save the final report to a file.
+  --max-iterations INTEGER  Agent loop safety limit (0 = unlimited).
+  --help                    Show usage and exit.
+```
+
+### Examples
+
+```bash
+# Basic research
+kresearch "Impact of AI on healthcare diagnostics"
+
+# Use a larger model for more complex reasoning
+kresearch --model gemini-3.1-pro-preview "Compare monetary policy approaches of the Fed vs ECB"
+
+# Save output and remove iteration limit
+kresearch --max-iterations 0 -o deep_dive.md "History and future of nuclear fusion energy"
+
+# List models to see what's available
+kresearch --list-models
+```
+
+---
+
+## Proxy Support
+
+KResearch supports HTTP and SOCKS proxies for all outbound traffic. Proxies can be set globally or per-provider.
+
+```bash
+# Global proxy (applies to Gemini API calls AND web scraping)
+export KRESEARCH_PROXY=http://127.0.0.1:7890
+
+# Provider-specific proxy (overrides global for Gemini only)
+export KRESEARCH_GEMINI_PROXY=socks5://127.0.0.1:1080
+
+# CLI override
+kresearch --proxy http://proxy.example.com:8080 "your query"
+```
+
+The proxy is passed to:
+- `google.genai.Client(http_options={"proxy": ...})` for Gemini API calls.
+- `httpx.AsyncClient(proxy=...)` for `read_webpage` fallback scraping.
+- Future provider SDK clients.
+
+---
+
+## Output Format
+
+The final report is plain Markdown with this structure:
+
+```markdown
+# Research Report: {Descriptive Title}
+
+## Executive Summary
+4-6 dense sentences: what was investigated, key findings with data,
+conclusions, and caveats.
+
+## {Thematic Section 1}
+3-5 substantive paragraphs with inline citations [N] for every
+factual claim. Specific data, statistics, expert opinions.
+
+## {Thematic Section 2}
+...
+
+## Contradictions & Debates
+Where sources disagree, both sides presented with citations.
+Assessment of which has stronger evidence and why.
+
+## Limitations
+Gaps in available sources, unverifiable claims, areas needing
+further investigation.
+
+## Sources
+[1] Source Title - https://source-url.com/path
+[2] Source Title - https://source-url.com/path
+...
+```
+
+The report is printed to `stdout` as plain text and can optionally be saved to a file with `-o`.
+
+---
+
+## Architecture
+
+```
+src/kresearch/
+├── __init__.py              # Package version
+├── __main__.py              # python -m kresearch entry point
+├── cli.py                   # Click CLI (argument parsing, provider init, orchestrator launch)
+├── config.py                # KResearchConfig (Pydantic Settings from env/.env/CLI)
+├── prompts.py               # SYSTEM_TEMPLATE — the 7K-char agent system prompt
+├── orchestrator.py          # Orchestrator class — the autonomous agent loop
+│
+├── models/
+│   ├── mind_map.py          # MindMap, MindMapNode, Source, Contradiction
+│   ├── task_graph.py        # TaskGraph, TaskNode, TaskStatus (sub-task tracking)
+│   └── state.py             # ResearchState, ActionLog, TokenUsage (session state)
+│
+├── providers/
+│   ├── __init__.py          # get_provider() factory + PROVIDER_REGISTRY
+│   ├── base.py              # ProviderInterface (ABC), ChatSession (ABC)
+│   ├── types.py             # Message, GenerateResponse, FunctionCall, ModelInfo, ToolDeclaration
+│   ├── gemini/
+│   │   ├── provider.py      # GeminiProvider — google-genai SDK integration
+│   │   └── chat.py          # GeminiChatSession — multi-turn chat with batch function responses
+│   ├── openai/__init__.py   # Placeholder (NotImplementedError)
+│   ├── anthropic/__init__.py
+│   ├── xai/__init__.py
+│   └── perplexity/__init__.py
+│
+├── tools/
+│   ├── registry.py          # ToolRegistry + create_default_registry()
+│   ├── web_search.py        # DuckDuckGo search via ddgs
+│   ├── web_reader.py        # trafilatura extraction + httpx/bs4 fallback
+│   ├── code_executor.py     # Sandboxed subprocess Python execution
+│   ├── research_tools.py    # update_findings, log_contradiction, draft_report
+│   └── subagent_tool.py     # spawn_subagent (mini research loop)
+│
+└── output/
+    ├── console.py           # ConsoleUI — Rich banner, live panel, model table
+    └── markdown.py          # ensure_citations, format_source_list, save_report
+```
+
+### Data flow
+
+```
+CLI (cli.py)
+ │  Parses args, builds KResearchConfig, creates provider via get_provider()
+ ▼
+Orchestrator (orchestrator.py)
+ │  Builds system prompt from SYSTEM_TEMPLATE + current ResearchState
+ │  Creates a ChatSession via provider.create_chat()
+ │  Enters the agent loop
+ ▼
+Agent Loop
+ │  Sends query to LLM → gets response
+ │  If response has function_calls:
+ │    Execute ALL calls via ToolRegistry.execute()
+ │    Send ALL results back via chat.send_function_responses()
+ │    Process the next response (may recurse if more calls)
+ │  If response has text + draft_requested:
+ │    Return text as the final report
+ │  If over budget:
+ │    Force synthesis via _finalize()
+ ▼
+Tools (tools/*.py)
+ │  Each tool is an async function: (args, **ctx) -> dict
+ │  ctx contains: state (ResearchState), provider, config
+ │  Tools modify state.mind_map via add_finding(), log_contradiction()
+ ▼
+ConsoleUI (output/console.py)
+ │  Rich Live panel updated after each tool call
+ │  Shows: tool actions log, mind map tree, iteration/source/token stats
+ ▼
+Final Report → stdout and optionally → file
+```
+
+---
+
+## Dependencies
+
+| Package | Purpose |
+|---|---|
+| `google-genai` | Gemini SDK — first provider implementation |
+| `pydantic` | Data models (MindMap, ResearchState, provider types) |
+| `pydantic-settings` | Configuration from environment, `.env`, CLI |
+| `rich` | Terminal UI — banner, live progress panel, model table |
+| `click` | CLI argument parsing |
+| `ddgs` | DuckDuckGo web search — free, no API key, no rate limits |
+| `trafilatura` | Article/webpage content extraction |
+| `httpx` | Async HTTP client (fallback scraping) |
+| `beautifulsoup4` | HTML parsing (fallback scraping) |
+| `lxml` | Fast HTML/XML parser (used by trafilatura and bs4) |
+
+### Dev dependencies
+
+`pytest`, `pytest-asyncio`, `ruff`, `mypy`
+
+### Optional dependencies
+
+`openai` (for future OpenAI provider), `anthropic` (for future Anthropic provider)
 
 ---
 
 ## License
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+MIT — see [LICENSE](LICENSE).

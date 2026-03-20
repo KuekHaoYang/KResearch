@@ -1,51 +1,42 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "kresearch"
 version = "0.1.0"
-description = "AI-powered deep research agent with multi-provider LLM support"
-requires-python = ">=3.11"
-license = {text = "MIT"}
+description = "Autonomous deep research agent"
 readme = "README.md"
-
+license = "MIT"
+requires-python = ">=3.10"
 dependencies = [
-    "python-dotenv>=1.0",
-    "pyyaml>=6.0",
+    "google-genai>=1.0.0",
     "pydantic>=2.0",
-    "openai>=1.0",
-    "anthropic>=0.30",
-    "google-generativeai>=0.7",
-    "httpx>=0.27",
-    "ollama>=0.3",
-    "tavily-python>=0.4",
-    "serpapi>=0.1",
-    "duckduckgo-search>=6.0",
-    "beautifulsoup4>=4.12",
-    "requests>=2.31",
-    "aiohttp>=3.9",
-    "chromadb>=0.5",
-    "sentence-transformers>=3.0",
+    "pydantic-settings>=2.0",
     "rich>=13.0",
-    "python-telegram-bot>=21.0",
-    "docker>=7.0",
-    "aiofiles>=24.0",
+    "click>=8.0",
+    "ddgs>=7.0",
+    "trafilatura>=2.0",
+    "httpx>=0.27",
+    "beautifulsoup4>=4.12",
+    "lxml>=5.0",
 ]
 
-[project.scripts]
-kresearch = "kresearch.__main__:main"
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.5", "mypy>=1.10"]
+openai = ["openai>=1.0"]
+anthropic = ["anthropic>=0.30"]
 
-[tool.setuptools.packages.find]
-include = ["kresearch*"]
+[project.scripts]
+kresearch = "kresearch.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kresearch"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py310"
 
-[tool.ruff.lint]
-select = ["E", "F", "W", "I", "N", "UP"]
-
-[tool.mypy]
-python_version = "3.11"
-strict = true
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
