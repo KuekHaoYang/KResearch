@@ -19,7 +19,7 @@ class Orchestrator:
         self._config, self._provider = config, provider
         self._registry, self._console = registry, console
         self._start_time, self._external_queue = 0.0, input_queue
-
+        self.last_state: ResearchState | None = None
     async def run(self, query: str) -> str:
         self._start_time = time.monotonic()
         state = ResearchState.create(query, self._config.max_iterations)
@@ -40,6 +40,7 @@ class Orchestrator:
             await self._console.stop()
         elapsed = time.monotonic() - self._start_time
         await self._console.show_total_time(elapsed, state)
+        self.last_state = state
         return report
 
     async def _agent_loop(self, chat: ChatSession, state: ResearchState,

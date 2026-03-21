@@ -46,10 +46,13 @@ class ResearchSession:
         try:
             report = await orchestrator.run(query)
             elapsed = time.monotonic() - self._start_time
+            state = orchestrator.last_state
             await self.webui.show_report(report)
             await report_db.save_report(
                 db, self.session_id, self.query, report,
                 config_json=json.dumps({"provider": self.config.provider, "model": self.config.model}),
+                source_count=state.mind_map.source_count() if state else 0,
+                iteration_count=state.iteration if state else 0,
                 duration_seconds=elapsed,
             )
         except asyncio.CancelledError:

@@ -32,6 +32,8 @@ class ConfigFieldInfo(BaseModel):
     default: Any
     current: Any
     is_secret: bool = False
+    widget: str = "text"  # "text", "password", "number", "select", "combo", "checkbox"
+    choices: list[str] = Field(default_factory=list)
 
 
 class ConfigResponse(BaseModel):

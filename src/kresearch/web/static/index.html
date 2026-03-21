@@ -53,8 +53,12 @@
   .setting-field label { display: block; color: var(--dim); font-size: 11px; margin-bottom: 2px; }
   .setting-field input, .setting-field select {
     width: 100%; padding: 6px 8px; background: var(--bg); border: 1px solid var(--border);
-    border-radius: 4px; color: var(--text); font-family: var(--font); font-size: 12px;
+    border-radius: 4px; color: var(--text); font-family: var(--font); font-size: 12px; outline: none;
   }
+  .setting-field input:focus, .setting-field select:focus { border-color: var(--accent); }
+  .setting-field select option { background: var(--bg); color: var(--text); }
+  .setting-field .checkbox-wrap { display: flex; align-items: center; gap: 6px; padding: 6px 0; }
+  .setting-field .checkbox-wrap input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); }
 
   /* Stats bar */
   .stats-bar {
@@ -195,7 +199,8 @@
       setTimeout(connect, 2000);
     };
     ws.onmessage = (e) => {
-      try { handleEvent(JSON.parse(e.data)); } catch {}
+      try { handleEvent(JSON.parse(e.data)); }
+      catch (err) { console.error('WS message error:', err, e.data); }
     };
   }
 
@@ -274,10 +279,16 @@
     reportSection.classList.remove('visible');
     reportSection.innerHTML = '';
     setRunning(true);
-    // Gather config overrides
+    // Gather config overrides from settings
     const config = {};
     document.querySelectorAll('.setting-field input, .setting-field select').forEach(el => {
-      if (el.value && el.value !== el.dataset.default) config[el.name] = el.value;
+      if (el.type === 'checkbox') {
+        if (String(el.checked) !== el.dataset.default) config[el.name] = el.checked;
+      } else if (el.type === 'password') {
+        if (el.value) config[el.name] = el.value;  // only send if user typed something
+      } else if (el.value && el.value !== el.dataset.default) {
+        config[el.name] = el.type === 'number' ? Number(el.value) : el.value;
+      }
     });
     ws.send(JSON.stringify({ type: 'start', query: q, config }));
   };
@@ -294,24 +305,117 @@
 
   // Settings
   $('settingsToggle').onclick = () => $('settingsPanel').classList.toggle('open');
+
+  // Track model datalists so we can refresh them when provider changes
+  const modelDataLists = {};  // { fieldName: datalistElement }
+
+  async function refreshModelList() {
+    const providerSel = document.querySelector('.setting-field select[name="provider"]');
+    const provider = providerSel ? providerSel.value : '';
+    // Gather API keys from settings form for authentication
+    const params = new URLSearchParams();
+    if (provider) params.set('provider', provider);
+    ['gemini_api_key', 'openai_api_key', 'custom_api_key', 'custom_api_base'].forEach(k => {
+      const el = document.querySelector(`.setting-field input[name="${k}"]`);
+      if (el && el.value) params.set(k, el.value);
+    });
+    try {
+      const res = await fetch(`/api/models?${params}`);
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        const ids = data.map(m => m.id);
+        Object.values(modelDataLists).forEach(dl => {
+          dl.innerHTML = '';
+          ids.forEach(id => {
+            const opt = document.createElement('option');
+            opt.value = id;
+            dl.appendChild(opt);
+          });
+        });
+      }
+    } catch {}
+  }
+
   fetch('/api/config').then(r => r.json()).then(data => {
     const grid = $('settingsGrid');
+    let datalistId = 0;
     (data.fields || []).forEach(f => {
-      if (f.is_secret || f.name === 'model_config') return;
+      if (f.name === 'model_config') return;
       const div = document.createElement('div');
       div.className = 'setting-field';
       const label = document.createElement('label');
       label.textContent = f.name;
-      const input = document.createElement('input');
-      input.name = f.name;
-      input.type = f.type === 'int' ? 'number' : 'text';
-      input.value = f.current ?? '';
-      input.dataset.default = f.default ?? '';
-      input.placeholder = f.default ?? '';
       div.appendChild(label);
-      div.appendChild(input);
+
+      if (f.widget === 'select') {
+        const sel = document.createElement('select');
+        sel.name = f.name;
+        sel.dataset.default = f.default ?? '';
+        const emptyOpt = document.createElement('option');
+        emptyOpt.value = ''; emptyOpt.textContent = `(default: ${f.default || 'none'})`;
+        sel.appendChild(emptyOpt);
+        (f.choices || []).forEach(c => {
+          const opt = document.createElement('option');
+          opt.value = c; opt.textContent = c;
+          if (f.current === c) opt.selected = true;
+          sel.appendChild(opt);
+        });
+        div.appendChild(sel);
+        // When provider changes, refresh the model lists
+        if (f.name === 'provider') sel.addEventListener('change', refreshModelList);
+      } else if (f.widget === 'combo') {
+        const dlId = 'dl_' + (datalistId++);
+        const input = document.createElement('input');
+        input.name = f.name; input.type = 'text';
+        input.setAttribute('list', dlId);
+        input.value = f.current ?? '';
+        input.dataset.default = f.default ?? '';
+        input.placeholder = f.default ?? '';
+        const dl = document.createElement('datalist');
+        dl.id = dlId;
+        modelDataLists[f.name] = dl;
+        div.appendChild(input);
+        div.appendChild(dl);
+      } else if (f.widget === 'checkbox') {
+        const wrap = document.createElement('div');
+        wrap.className = 'checkbox-wrap';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox'; cb.name = f.name;
+        cb.checked = !!f.current;
+        cb.dataset.default = String(f.default ?? false);
+        const span = document.createElement('span');
+        span.textContent = f.current ? 'Enabled' : 'Disabled';
+        span.style.fontSize = '12px'; span.style.color = 'var(--dim)';
+        cb.onchange = () => { span.textContent = cb.checked ? 'Enabled' : 'Disabled'; };
+        wrap.appendChild(cb); wrap.appendChild(span);
+        div.appendChild(wrap);
+      } else if (f.widget === 'password') {
+        const input = document.createElement('input');
+        input.name = f.name; input.type = 'password';
+        input.value = '';
+        input.dataset.default = '';
+        input.placeholder = f.is_secret ? '(enter to override)' : '';
+        input.autocomplete = 'off';
+        div.appendChild(input);
+      } else if (f.widget === 'number') {
+        const input = document.createElement('input');
+        input.name = f.name; input.type = 'number';
+        input.value = f.current ?? '';
+        input.dataset.default = f.default ?? '';
+        input.placeholder = String(f.default ?? '');
+        div.appendChild(input);
+      } else {
+        const input = document.createElement('input');
+        input.name = f.name; input.type = 'text';
+        input.value = f.current ?? '';
+        input.dataset.default = f.default ?? '';
+        input.placeholder = f.default ?? '';
+        div.appendChild(input);
+      }
       grid.appendChild(div);
     });
+    // Populate model lists on initial load
+    refreshModelList();
   }).catch(() => {});
 
   // Past reports
