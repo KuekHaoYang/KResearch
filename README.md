@@ -25,6 +25,7 @@ KResearch is an autonomous, provider-agnostic research agent that takes a plain-
 - [Provider Abstraction](#provider-abstraction)
 - [Configuration Reference](#configuration-reference)
 - [CLI Reference](#cli-reference)
+- [Web UI](#web-ui)
 - [Proxy Support](#proxy-support)
 - [Output Format](#output-format)
 - [Architecture](#architecture)
@@ -335,6 +336,9 @@ Options:
   --verbose                 Enable verbose logging.
   -o, --output PATH         Save the final report to a file.
   --max-iterations INTEGER  Agent loop safety limit (0 = unlimited).
+  --web                     Launch the Web UI instead of CLI mode.
+  --host TEXT               Web UI bind address (default: 127.0.0.1).
+  --port INTEGER            Web UI port (default: 8000).
   --help                    Show usage and exit.
 ```
 
@@ -360,6 +364,61 @@ kresearch --max-iterations 0 -o deep_dive.md "History and future of nuclear fusi
 kresearch --list-models
 kresearch --provider openai --list-models
 ```
+
+---
+
+## Web UI
+
+KResearch includes an optional browser-based interface that streams research events in real time over WebSocket.
+
+### Installation
+
+```bash
+pip install -e ".[web]"
+```
+
+### Launch
+
+```bash
+# Via CLI flag
+kresearch --web
+
+# Or directly
+kresearch-web
+
+# Custom host/port
+kresearch --web --host 0.0.0.0 --port 3000
+```
+
+Then open `http://127.0.0.1:8000` in your browser.
+
+### Features
+
+- **Real-time streaming** — tool calls, thinking, stats, and the final report stream over WebSocket as the agent works.
+- **Settings panel** — override provider, model, max iterations, and other config fields from the browser.
+- **User interrupts** — type a message or click Stop to redirect or halt the agent mid-research.
+- **Past reports** — completed reports are stored in SQLite (`~/.kresearch/reports.db`) and can be browsed, viewed, or deleted.
+- **Concurrent sessions** — each browser tab gets its own independent Orchestrator instance.
+
+### Architecture
+
+The Web UI uses the same `UIProtocol` interface as the CLI's `ConsoleUI`. A `WebUI` class implements this protocol by serializing events as JSON and sending them over WebSocket, rather than printing to the terminal. The Orchestrator itself is unchanged.
+
+```
+Browser  <──WebSocket──>  Starlette  ──>  Orchestrator (existing)
+                                           ├── WebUI (replaces ConsoleUI)
+                                           ├── Provider (existing)
+                                           ├── ToolRegistry (existing)
+                                           └── ResearchState (existing)
+```
+
+### Configuration
+
+| Variable | Default | Description |
+|---|---|---|
+| `KRESEARCH_WEB_HOST` | `127.0.0.1` | Web server bind address |
+| `KRESEARCH_WEB_PORT` | `8000` | Web server port |
+| `KRESEARCH_WEB_DB_PATH` | `~/.kresearch/reports.db` | SQLite database path for past reports |
 
 ---
 
@@ -466,7 +525,20 @@ src/kresearch/
 │
 └── output/
     ├── console.py           # ConsoleUI — Rich banner, live panel, model table
+    ├── protocol.py          # UIProtocol — async display contract (ConsoleUI & WebUI)
     └── markdown.py          # ensure_citations, format_source_list, save_report
+
+├── web/                     # Optional Web UI (pip install -e ".[web]")
+│   ├── __init__.py          # Exports create_app
+│   ├── app.py               # Starlette ASGI app factory + kresearch-web entry point
+│   ├── models.py            # Pydantic models: WSEvent, ConfigResponse, ReportSummary
+│   ├── webui.py             # WebUI — UIProtocol over WebSocket
+│   ├── db.py                # Async SQLite storage for past reports
+│   ├── session.py           # ResearchSession + SessionManager
+│   ├── routes.py            # REST endpoints (config, reports, health)
+│   ├── ws.py                # WebSocket endpoint for real-time streaming
+│   └── static/
+│       └── index.html       # Single-page frontend (vanilla JS, dark theme)
 ```
 
 ### Data flow
@@ -526,7 +598,7 @@ Final Report → stdout and optionally → file
 
 ### Optional dependencies
 
-`openai` (for OpenAI and custom providers), `anthropic` (for future Anthropic provider)
+`openai` (for OpenAI and custom providers), `anthropic` (for future Anthropic provider), `starlette` + `uvicorn` + `aiosqlite` (for the Web UI)
 
 ---
 
@@ -555,7 +627,7 @@ Final Report → stdout and optionally → file
 
 - [ ] **Telegram bot** — Run KResearch as a Telegram bot: send a query, receive the report as a message. Support for inline progress updates via message editing
 - [ ] **Discord bot** — Same as Telegram, with thread-based research sessions
-- [ ] **Web UI** — Simple FastAPI + WebSocket frontend: submit queries, watch research happen in real time, browse past reports
+- [x] **Web UI** — Starlette + WebSocket frontend: submit queries, watch research happen in real time, browse past reports
 - [ ] **Export formats** — PDF export, HTML export, DOCX export via pandoc
 - [ ] **Structured JSON output** — Machine-readable report format alongside Markdown for programmatic consumption
 

@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KResearch — Web UI</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117; --surface: #161b22; --border: #30363d;
+    --text: #c9d1d9; --dim: #8b949e; --accent: #58a6ff;
+    --green: #3fb950; --red: #f85149; --yellow: #d29922;
+    --font: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  .container { max-width: 960px; margin: 0 auto; padding: 16px; }
+
+  /* Header */
+  .header { text-align: center; padding: 24px 0 16px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+  .header h1 { color: var(--accent); font-size: 20px; letter-spacing: 2px; }
+  .header .sub { color: var(--dim); font-size: 12px; margin-top: 4px; }
+
+  /* Query input */
+  .query-section { display: flex; gap: 8px; margin-bottom: 12px; }
+  .query-section input {
+    flex: 1; padding: 10px 14px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text); font-family: var(--font); font-size: 14px; outline: none;
+  }
+  .query-section input:focus { border-color: var(--accent); }
+  .btn {
+    padding: 10px 20px; border: none; border-radius: 6px; font-family: var(--font);
+    font-size: 13px; cursor: pointer; font-weight: 600; transition: opacity 0.15s;
+  }
+  .btn:hover { opacity: 0.85; }
+  .btn-primary { background: var(--accent); color: #000; }
+  .btn-danger { background: var(--red); color: #fff; }
+  .btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Settings */
+  .settings-toggle { color: var(--dim); font-size: 12px; cursor: pointer; margin-bottom: 8px; display: inline-block; }
+  .settings-toggle:hover { color: var(--text); }
+  .settings-panel {
+    display: none; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; padding: 12px; margin-bottom: 12px;
+  }
+  .settings-panel.open { display: block; }
+  .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .setting-field label { display: block; color: var(--dim); font-size: 11px; margin-bottom: 2px; }
+  .setting-field input, .setting-field select {
+    width: 100%; padding: 6px 8px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 4px; color: var(--text); font-family: var(--font); font-size: 12px;
+  }
+
+  /* Stats bar */
+  .stats-bar {
+    display: flex; gap: 16px; padding: 8px 12px; background: var(--surface);
+    border: 1px solid var(--border); border-radius: 6px; margin-bottom: 12px;
+    font-size: 12px; color: var(--dim);
+  }
+  .stats-bar .stat-val { color: var(--green); font-weight: 600; }
+
+  /* Research log */
+  .log-section {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+    max-height: 400px; overflow-y: auto; padding: 12px; margin-bottom: 12px;
+    font-size: 13px; line-height: 1.6;
+  }
+  .log-entry { padding: 2px 0; }
+  .log-entry.action { color: var(--text); }
+  .log-entry.thinking { color: var(--yellow); font-style: italic; }
+  .log-entry.result { color: var(--dim); padding-left: 20px; }
+  .log-entry.info { color: var(--dim); }
+  .log-entry.error { color: var(--red); }
+  .log-entry .time { color: var(--dim); font-size: 11px; }
+  .log-entry .check { color: var(--green); }
+
+  /* Interrupt */
+  .interrupt-section { display: none; gap: 8px; margin-bottom: 12px; }
+  .interrupt-section.active { display: flex; }
+  .interrupt-section input { flex: 1; padding: 8px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-family: var(--font); font-size: 13px; }
+
+  /* Report */
+  .report-section {
+    display: none; background: var(--surface); border: 1px solid var(--green);
+    border-radius: 6px; padding: 20px; margin-bottom: 16px;
+  }
+  .report-section.visible { display: block; }
+  .report-section h2, .report-section h3 { color: var(--accent); margin: 16px 0 8px; }
+  .report-section h1 { color: var(--green); font-size: 18px; margin-bottom: 12px; }
+  .report-section p { line-height: 1.7; margin-bottom: 10px; }
+  .report-section ul, .report-section ol { padding-left: 20px; margin-bottom: 10px; }
+  .report-section code { background: var(--bg); padding: 2px 6px; border-radius: 3px; font-size: 12px; }
+  .report-section pre { background: var(--bg); padding: 12px; border-radius: 6px; overflow-x: auto; margin-bottom: 10px; }
+  .report-section blockquote { border-left: 3px solid var(--accent); padding-left: 12px; color: var(--dim); margin-bottom: 10px; }
+  .report-section table { border-collapse: collapse; width: 100%; margin-bottom: 10px; }
+  .report-section th, .report-section td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+  .report-section th { background: var(--bg); }
+
+  /* Past reports */
+  .past-reports { margin-top: 16px; }
+  .past-reports h3 { color: var(--dim); font-size: 13px; margin-bottom: 8px; border-top: 1px solid var(--border); padding-top: 16px; }
+  .report-item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 12px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; margin-bottom: 6px; cursor: pointer;
+  }
+  .report-item:hover { border-color: var(--accent); }
+  .report-item .query-text { flex: 1; font-size: 13px; }
+  .report-item .meta { color: var(--dim); font-size: 11px; margin-left: 12px; white-space: nowrap; }
+  .report-item .del-btn { color: var(--red); cursor: pointer; margin-left: 8px; font-size: 12px; border: none; background: none; font-family: var(--font); }
+  .report-item .del-btn:hover { text-decoration: underline; }
+
+  /* Connection status */
+  .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .status-dot.connected { background: var(--green); }
+  .status-dot.disconnected { background: var(--red); }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>KRESEARCH</h1>
+    <div class="sub">Autonomous Deep Research Agent &mdash; <span class="status-dot disconnected" id="statusDot"></span><span id="statusText">Disconnected</span></div>
+  </div>
+
+  <div class="query-section">
+    <input type="text" id="queryInput" placeholder="Enter your research query..." autofocus />
+    <button class="btn btn-primary" id="startBtn" disabled>Start</button>
+  </div>
+
+  <span class="settings-toggle" id="settingsToggle">&#9881; Settings</span>
+  <div class="settings-panel" id="settingsPanel">
+    <div class="settings-grid" id="settingsGrid"></div>
+  </div>
+
+  <div class="stats-bar" id="statsBar" style="display:none">
+    <span>Iteration: <span class="stat-val" id="statIter">0</span></span>
+    <span>Sources: <span class="stat-val" id="statSources">0</span></span>
+    <span>Tokens: <span class="stat-val" id="statTokens">0</span></span>
+    <span>Session: <span class="stat-val" id="statSession">—</span></span>
+  </div>
+
+  <div class="log-section" id="logSection" style="display:none"></div>
+
+  <div class="interrupt-section" id="interruptSection">
+    <input type="text" id="interruptInput" placeholder="Redirect the agent or type 'stop'..." />
+    <button class="btn btn-secondary" id="sendInterrupt">Send</button>
+    <button class="btn btn-danger" id="stopBtn">Stop</button>
+  </div>
+
+  <div class="report-section" id="reportSection"></div>
+
+  <div class="past-reports" id="pastReports">
+    <h3>Past Reports</h3>
+    <div id="reportsList"></div>
+  </div>
+</div>
+
+<script>
+(function() {
+  const $ = id => document.getElementById(id);
+  let ws = null, sessionId = null, running = false;
+
+  // Elements
+  const queryInput = $('queryInput'), startBtn = $('startBtn');
+  const logSection = $('logSection'), statsBar = $('statsBar');
+  const interruptSection = $('interruptSection'), interruptInput = $('interruptInput');
+  const reportSection = $('reportSection'), reportsList = $('reportsList');
+  const statusDot = $('statusDot'), statusText = $('statusText');
+
+  // Connect WebSocket
+  function connect() {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(`${proto}//${location.host}/ws`);
+    ws.onopen = () => {
+      statusDot.className = 'status-dot connected';
+      statusText.textContent = 'Connected';
+      startBtn.disabled = false;
+    };
+    ws.onclose = () => {
+      statusDot.className = 'status-dot disconnected';
+      statusText.textContent = 'Disconnected';
+      startBtn.disabled = true;
+      setRunning(false);
+      setTimeout(connect, 2000);
+    };
+    ws.onmessage = (e) => {
+      try { handleEvent(JSON.parse(e.data)); } catch {}
+    };
+  }
+
+  function setRunning(v) {
+    running = v;
+    startBtn.disabled = v || !ws || ws.readyState !== 1;
+    startBtn.textContent = v ? 'Running...' : 'Start';
+    interruptSection.classList.toggle('active', v);
+    if (v) { statsBar.style.display = 'flex'; logSection.style.display = 'block'; }
+  }
+
+  // Event handler
+  function handleEvent(evt) {
+    const d = evt.data || {};
+    switch (evt.type) {
+      case 'session_created':
+        sessionId = d.session_id;
+        $('statSession').textContent = sessionId;
+        break;
+      case 'start_research':
+        logEntry(`Research started: "${d.query}"`, 'info');
+        break;
+      case 'action':
+        const icon = {'web_search':'🔍','read_webpage':'📄','execute_python':'💻',
+          'update_findings':'📝','log_contradiction':'⚠️','spawn_subagent':'🤖',
+          'draft_report':'📋'}[d.tool] || '⚙️';
+        const timeStr = d.elapsed != null ? `  ${d.elapsed.toFixed(1)}s` : '';
+        logEntry(`${icon} ${d.description}  ✓${timeStr}`, 'action');
+        break;
+      case 'thinking':
+        logEntry(`🧠 ${d.text}`, 'thinking');
+        break;
+      case 'result_summary':
+        logEntry(`→ ${d.summary}`, 'result');
+        break;
+      case 'stats':
+        $('statIter').textContent = d.iteration;
+        $('statSources').textContent = d.sources;
+        $('statTokens').textContent = d.tokens > 1000 ? `~${Math.round(d.tokens/1000)}K` : d.tokens;
+        logEntry(`── Iteration ${d.iteration} │ Sources: ${d.sources} │ Tokens: ~${Math.round(d.tokens/1000)}K ──`, 'info');
+        break;
+      case 'log':
+        logEntry(d.message, 'info');
+        break;
+      case 'report':
+        reportSection.classList.add('visible');
+        reportSection.innerHTML = marked.parse(d.markdown || '');
+        break;
+      case 'total_time':
+        logEntry(`✅ Done in ${d.time_str} │ Sources: ${d.sources} │ Iterations: ${d.iterations} │ Tokens: ~${Math.round(d.tokens/1000)}K`, 'info');
+        break;
+      case 'stopped':
+        setRunning(false);
+        loadReports();
+        break;
+      case 'error':
+        logEntry(`❌ ${d.message}`, 'error');
+        setRunning(false);
+        break;
+    }
+  }
+
+  function logEntry(text, cls) {
+    const div = document.createElement('div');
+    div.className = `log-entry ${cls}`;
+    div.textContent = text;
+    logSection.appendChild(div);
+    logSection.scrollTop = logSection.scrollHeight;
+  }
+
+  // Start research
+  startBtn.onclick = () => {
+    const q = queryInput.value.trim();
+    if (!q || !ws || ws.readyState !== 1) return;
+    logSection.innerHTML = '';
+    reportSection.classList.remove('visible');
+    reportSection.innerHTML = '';
+    setRunning(true);
+    // Gather config overrides
+    const config = {};
+    document.querySelectorAll('.setting-field input, .setting-field select').forEach(el => {
+      if (el.value && el.value !== el.dataset.default) config[el.name] = el.value;
+    });
+    ws.send(JSON.stringify({ type: 'start', query: q, config }));
+  };
+
+  queryInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') startBtn.click(); });
+
+  // Interrupt
+  $('sendInterrupt').onclick = () => {
+    const msg = interruptInput.value.trim();
+    if (msg && ws) { ws.send(JSON.stringify({ type: 'interrupt', message: msg })); interruptInput.value = ''; }
+  };
+  $('stopBtn').onclick = () => { if (ws) ws.send(JSON.stringify({ type: 'stop' })); };
+  interruptInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('sendInterrupt').click(); });
+
+  // Settings
+  $('settingsToggle').onclick = () => $('settingsPanel').classList.toggle('open');
+  fetch('/api/config').then(r => r.json()).then(data => {
+    const grid = $('settingsGrid');
+    (data.fields || []).forEach(f => {
+      if (f.is_secret || f.name === 'model_config') return;
+      const div = document.createElement('div');
+      div.className = 'setting-field';
+      const label = document.createElement('label');
+      label.textContent = f.name;
+      const input = document.createElement('input');
+      input.name = f.name;
+      input.type = f.type === 'int' ? 'number' : 'text';
+      input.value = f.current ?? '';
+      input.dataset.default = f.default ?? '';
+      input.placeholder = f.default ?? '';
+      div.appendChild(label);
+      div.appendChild(input);
+      grid.appendChild(div);
+    });
+  }).catch(() => {});
+
+  // Past reports
+  async function loadReports() {
+    try {
+      const res = await fetch('/api/reports');
+      const reports = await res.json();
+      reportsList.innerHTML = '';
+      reports.forEach(r => {
+        const item = document.createElement('div');
+        item.className = 'report-item';
+        const dur = r.duration_seconds > 60
+          ? `${Math.floor(r.duration_seconds/60)}m ${Math.round(r.duration_seconds%60)}s`
+          : `${Math.round(r.duration_seconds)}s`;
+        item.innerHTML = `
+          <span class="query-text">${escHtml(r.query)}</span>
+          <span class="meta">${r.source_count} sources · ${dur} · ${r.created_at?.slice(0,10) || ''}</span>
+          <button class="del-btn" data-id="${r.session_id}">delete</button>`;
+        item.querySelector('.query-text').onclick = () => viewReport(r.session_id);
+        item.querySelector('.del-btn').onclick = async (e) => {
+          e.stopPropagation();
+          await fetch(`/api/reports/${r.session_id}`, { method: 'DELETE' });
+          loadReports();
+        };
+        reportsList.appendChild(item);
+      });
+    } catch {}
+  }
+
+  async function viewReport(sid) {
+    try {
+      const res = await fetch(`/api/reports/${sid}`);
+      const data = await res.json();
+      reportSection.classList.add('visible');
+      reportSection.innerHTML = marked.parse(data.report || '');
+      reportSection.scrollIntoView({ behavior: 'smooth' });
+    } catch {}
+  }
+
+  function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+  // Init
+  connect();
+  loadReports();
+})();
+</script>
+</body>
+</html>

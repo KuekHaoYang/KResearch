@@ -6,6 +6,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+from kresearch.models.mind_map import MindMap
 from kresearch.providers.types import ModelInfo
 
 BANNER = r"""
@@ -61,23 +62,23 @@ class ConsoleUI:
             table.add_row(key, "********" if "key" in key.lower() and val else str(val), source)
         self.console.print(table)
 
-    def start_research(self, query: str) -> None:
+    # --- UIProtocol methods (async) ---
+
+    async def start_research(self, query: str) -> None:
         self._query = query
         self.console.print(Panel(
             f'[bold]{query}[/bold]', title="Research Query", border_style="cyan",
         ))
         self.console.print('[dim]Type a message to redirect, or "stop" to finish early[/dim]\n')
 
-    def log_action(self, tool: str, desc: str, status: str = "done",
-                   elapsed: float | None = None) -> None:
-        """Print a permanent log line for a tool call with optional timing."""
+    async def log_action(self, tool: str, desc: str, status: str = "done",
+                         elapsed: float | None = None) -> None:
         icon = ICONS.get(tool, "⚙️ ")
         mark = "[green]✓[/green]" if status == "done" else "[red]✗[/red]"
         time_str = f"  [dim]{elapsed:.1f}s[/dim]" if elapsed is not None else ""
         self.console.print(f"  {icon} {desc}  {mark}{time_str}")
 
-    def log_thinking(self, text: str) -> None:
-        """Print the model's thinking/reasoning — show full content."""
+    async def log_thinking(self, text: str) -> None:
         if not text or len(text.strip()) < 5:
             return
         snippet = text.strip()
@@ -85,8 +86,7 @@ class ConsoleUI:
             snippet = snippet[:497] + "..."
         self.console.print(f"\n  🧠 [italic]{snippet}[/italic]\n")
 
-    def log_result_summary(self, tool: str, result: dict) -> None:
-        """Print a brief summary of what a tool call returned."""
+    async def log_result_summary(self, tool: str, result: dict) -> None:
         summary = _summarize_result(tool, result)
         if summary:
             self.console.print(f"     [dim]→ {summary}[/dim]")
@@ -100,26 +100,27 @@ class ConsoleUI:
     def update_mind_map_display(self, mind_map: MindMap) -> None:
         pass  # Mind map updates are shown via update_findings log lines
 
-    def update_stats(self, iteration: int, sources: int, tokens: int) -> None:
+    async def update_stats(self, iteration: int, sources: int, tokens: int) -> None:
         self.log_iteration(iteration, sources, tokens)
 
-    def show_report(self, text: str) -> None:
+    async def show_report(self, text: str) -> None:
         self.console.print("\n")
         self.console.print(Panel("[bold green]Research Complete[/bold green]", border_style="green"))
         self.console.print(text)
 
-    def show_total_time(self, elapsed: float, state) -> None:
+    async def show_total_time(self, elapsed: float, state: object) -> None:
         mins, secs = int(elapsed // 60), int(elapsed % 60)
         time_str = f"{mins}m {secs}s" if mins else f"{secs}s"
-        t = state.token_usage.input_tokens + state.token_usage.output_tokens
+        t = state.token_usage.input_tokens + state.token_usage.output_tokens  # type: ignore[attr-defined]
         self.console.print(
             f"\n  [bold cyan]Total research time: {time_str}[/bold cyan]  │  "
-            f"Sources: {state.mind_map.source_count()}  │  Iterations: {state.iteration}  │  Tokens: ~{t // 1000}K\n")
+            f"Sources: {state.mind_map.source_count()}  │  "  # type: ignore[attr-defined]
+            f"Iterations: {state.iteration}  │  Tokens: ~{t // 1000}K\n")  # type: ignore[attr-defined]
 
-    def stop(self) -> None:
+    async def stop(self) -> None:
         pass  # No Live panel to stop
 
-    def print(self, msg: str, **kw) -> None:
+    async def print(self, msg: str, **kw: object) -> None:
         self.console.print(msg, **kw)
 
 

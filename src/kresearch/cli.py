@@ -19,11 +19,22 @@ from kresearch.output.markdown import save_report
 @click.option("--verbose", is_flag=True, help="Enable verbose logging.")
 @click.option("--output", "-o", type=click.Path(), help="Save report to file.")
 @click.option("--max-iterations", type=int, help="Max agent iterations (0=unlimited).")
+@click.option("--web", is_flag=True, help="Launch the Web UI instead of CLI.")
+@click.option("--host", default=None, help="Web UI host (default: 127.0.0.1).")
+@click.option("--port", type=int, default=None, help="Web UI port (default: 8000).")
 def main(query, model, fast_model, provider, proxy, list_models, show_config,
-         verbose, output, max_iterations):
+         verbose, output, max_iterations, web, host, port):
     """KResearch - Autonomous Deep Research Agent."""
     overrides = _build_overrides(model, fast_model, provider, proxy, verbose, max_iterations)
     cfg = KResearchConfig(**overrides)
+
+    if web:
+        import uvicorn
+        from kresearch.web.app import create_app
+        app = create_app()
+        uvicorn.run(app, host=host or cfg.web_host, port=port or cfg.web_port)
+        return
+
     console = ConsoleUI()
 
     if show_config:

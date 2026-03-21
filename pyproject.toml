@@ -27,9 +27,11 @@ dev = ["pytest>=8.0", "pytest-asyncio>=0.23", "ruff>=0.5", "mypy>=1.10"]
 openai = ["openai>=1.0"]
 custom = ["openai>=1.0"]
 anthropic = ["anthropic>=0.30"]
+web = ["starlette>=0.41", "uvicorn[standard]>=0.32", "aiosqlite>=0.20"]
 
 [project.scripts]
 kresearch = "kresearch.cli:main"
+kresearch-web = "kresearch.web.app:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/kresearch"]

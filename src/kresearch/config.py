@@ -39,6 +39,11 @@ class KResearchConfig(BaseSettings):
     verbose: bool = False
     output_dir: str = "."
 
+    # Web UI
+    web_host: str = "127.0.0.1"
+    web_port: int = 8000
+    web_db_path: str = ""
+
     def get_proxy(self, provider: str | None = None) -> str | None:
         """Return the most specific proxy for the given provider."""
         provider_proxy = getattr(self, f"{provider}_proxy", None) if provider else None

@@ -119,8 +119,21 @@ src/kresearch/
 └── output/
     ├── console.py           # ConsoleUI — Rich-based terminal UI (ASCII banner,
     │                        #   live progress panel, model table, report display)
+    ├── protocol.py          # UIProtocol — async display contract implemented by
+    │                        #   both ConsoleUI and WebUI
     └── markdown.py          # Post-processing: ensure_citations(), format_source_list(),
                              #   save_report()
+
+├── web/                     # Optional Web UI (pip install -e ".[web]")
+│   ├── __init__.py          # Exports create_app
+│   ├── app.py               # Starlette ASGI app factory + entry point
+│   ├── models.py            # Pydantic models for WebSocket events and REST responses
+│   ├── webui.py             # WebUI — UIProtocol over WebSocket (JSON events)
+│   ├── db.py                # aiosqlite storage for past research reports
+│   ├── session.py           # ResearchSession + SessionManager
+│   ├── routes.py            # REST endpoints (/api/config, /api/reports, /api/health)
+│   ├── ws.py                # WebSocket endpoint (/ws) for real-time streaming
+│   └── static/index.html    # Single-page frontend (vanilla JS, dark theme)
 ```
 
 ---
@@ -453,6 +466,45 @@ kresearch --max-iterations 2 "What is quantum computing?"
 ```
 
 This runs a real research loop limited to 2 iterations — enough to verify the full pipeline (search, read, update findings, draft report) without excessive API usage.
+
+---
+
+## Web UI Architecture
+
+The Web UI wraps the existing Orchestrator without modifying its core logic. The key pattern is `UIProtocol` — a `typing.Protocol` that defines the async display contract.
+
+### The UIProtocol Pattern
+
+Both `ConsoleUI` (terminal) and `WebUI` (browser) implement the same interface structurally:
+
+```python
+class UIProtocol(Protocol):
+    async def start_research(self, query: str) -> None: ...
+    async def log_action(self, tool: str, desc: str, ...) -> None: ...
+    async def log_thinking(self, text: str) -> None: ...
+    async def log_result_summary(self, tool: str, result: dict) -> None: ...
+    async def update_stats(self, iteration: int, sources: int, tokens: int) -> None: ...
+    async def show_report(self, text: str) -> None: ...
+    async def show_total_time(self, elapsed: float, state: object) -> None: ...
+    async def stop(self) -> None: ...
+    async def print(self, msg: str, **kw: object) -> None: ...
+```
+
+- `ConsoleUI` calls `rich.Console.print()` synchronously inside each `async def`.
+- `WebUI` serializes events as `WSEvent` JSON and sends via `WebSocket.send_json()`.
+
+### WebSocket Flow
+
+1. Browser connects to `/ws`.
+2. Browser sends `{"type": "start", "query": "...", "config": {...}}`.
+3. Server creates a `ResearchSession` with its own `WebUI`, `Orchestrator`, and `asyncio.Task`.
+4. As the Orchestrator runs, `WebUI` streams events: `action`, `thinking`, `stats`, `log`, `report`, `stopped`.
+5. Browser can send `{"type": "interrupt", "message": "..."}` at any time — injected into the Orchestrator's input queue.
+6. On completion, the report is saved to SQLite and the session cleans up.
+
+### Adding Web UI Features
+
+The REST API (`routes.py`) and WebSocket handler (`ws.py`) are separate. To add a new REST endpoint, add a route to `routes.py`. To add a new real-time event type, add a method to `WebUI` and handle the new event type in `index.html`'s `handleEvent()` switch.
 
 ---
 
