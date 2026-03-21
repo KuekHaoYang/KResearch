@@ -1,12 +1,5 @@
-"""OpenAI provider — not yet implemented."""
+"""OpenAI provider — GPT-4o / GPT-4o-mini via the openai SDK."""
 
-DEFAULT_MODEL = "gpt-4o"
-FAST_MODEL = "gpt-4o-mini"
+from .provider import OpenaiProvider
 
-
-class OpenaiProvider:
-    def __init__(self, config):
-        raise NotImplementedError(
-            "OpenAI provider is not yet implemented. "
-            "Install: pip install kresearch[openai]"
-        )
+__all__ = ["OpenaiProvider"]

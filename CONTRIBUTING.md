@@ -92,7 +92,15 @@ src/kresearch/
 │   │   └── chat.py          # GeminiChatSession — multi-turn chat with proper
 │   │                        #   batch function-response support (sends all tool
 │   │                        #   results in a single message)
-│   ├── openai/__init__.py   # Placeholder — raises NotImplementedError
+│   ├── openai/
+│   │   ├── provider.py      # OpenaiProvider — wraps openai SDK; handles tool
+│   │   │                    #   declaration conversion, response parsing with
+│   │   │                    #   tool_call_id tracking, proxy support
+│   │   └── chat.py          # OpenaiChatSession — multi-turn chat with proper
+│   │                        #   batch tool results (multiple role=tool messages)
+│   ├── custom/
+│   │   └── provider.py      # CustomProvider — subclass of OpenaiProvider with
+│   │                        #   custom base_url for OpenAI-compatible endpoints
 │   ├── anthropic/__init__.py
 │   ├── xai/__init__.py
 │   └── perplexity/__init__.py
@@ -196,7 +204,7 @@ This ensures the user always gets a report, even if the agent is mid-tool-call w
 
 ## Adding a New Provider
 
-This is the most common extension. Here is a concrete walkthrough using OpenAI as the example.
+This is the most common extension. Here is a concrete walkthrough — see `providers/openai/` and `providers/gemini/` for fully working examples.
 
 ### Step 1: Create the provider module
 

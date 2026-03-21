@@ -20,11 +20,15 @@ class KResearchConfig(BaseSettings):
 
     # API keys (loaded from env)
     gemini_api_key: str = Field(default="", alias="GOOGLE_API_KEY")
+    openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
+    custom_api_key: str = ""
+    custom_api_base: str = ""  # e.g. "https://api.deepseek.com/v1"
 
     # Proxy settings
     proxy: str | None = None
     gemini_proxy: str | None = None
     openai_proxy: str | None = None
+    custom_proxy: str | None = None
 
     # Agent behaviour
     max_iterations: int = 20  # 0 = unlimited

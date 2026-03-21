@@ -57,6 +57,7 @@ KResearch is an autonomous, provider-agnostic research agent that takes a plain-
 
 - Python 3.10 or later
 - A Google Gemini API key (get one at [ai.google.dev](https://ai.google.dev/gemini-api/docs/api-key))
+- Or an OpenAI API key, or any OpenAI-compatible API endpoint
 
 ### Installation
 
@@ -64,24 +65,38 @@ KResearch is an autonomous, provider-agnostic research agent that takes a plain-
 git clone https://github.com/KuekHaoYang/KResearch.git
 cd kresearch
 pip install -e .
+
+# For OpenAI / custom provider support:
+pip install -e ".[openai]"
 ```
 
 ### Set your API key
 
 ```bash
+# Gemini (default provider)
 export GOOGLE_API_KEY=your-key-here
+
+# OpenAI
+export OPENAI_API_KEY=sk-...
+
+# Custom OpenAI-compatible API (e.g. DeepSeek, Together, Ollama)
+export KRESEARCH_CUSTOM_API_KEY=your-key
+export KRESEARCH_CUSTOM_API_BASE=https://api.deepseek.com/v1
 ```
 
-Or create a `.env` file in the project root (see `.env.example`):
-
-```
-GOOGLE_API_KEY=your-key-here
-```
+Or create a `.env` file in the project root (see `.env.example`).
 
 ### Run a research query
 
 ```bash
+# With Gemini (default)
 kresearch "What are the latest breakthroughs in quantum computing?"
+
+# With OpenAI
+kresearch --provider openai --model gpt-4o "What are the latest breakthroughs in quantum computing?"
+
+# With a custom OpenAI-compatible API
+kresearch --provider custom --model deepseek-chat "What are the latest breakthroughs in quantum computing?"
 ```
 
 ### Other common commands
@@ -260,7 +275,8 @@ All types are defined in `src/kresearch/providers/types.py`:
 | Provider | Status | Default model | Fast model |
 |---|---|---|---|
 | **Gemini** | Fully implemented | `gemini-3-flash-preview` | `gemini-3.1-flash-lite-preview` |
-| OpenAI | Placeholder (not yet implemented) | `gpt-4o` | `gpt-4o-mini` |
+| **OpenAI** | Fully implemented | `gpt-4o` | `gpt-4o-mini` |
+| **Custom API** | Fully implemented | *(user-specified)* | *(user-specified)* |
 | Anthropic | Placeholder (not yet implemented) | `claude-sonnet-4-6` | `claude-haiku-4-5` |
 | xAI | Placeholder (not yet implemented) | `grok-3` | `grok-3-fast` |
 | Perplexity | Placeholder (not yet implemented) | `sonar-pro` | `sonar` |
@@ -275,13 +291,17 @@ Configuration is handled by `KResearchConfig` (Pydantic Settings), loaded from e
 
 | Variable | CLI Flag | Default | Description |
 |---|---|---|---|
-| `GOOGLE_API_KEY` | — | *(required)* | Gemini API key. |
+| `GOOGLE_API_KEY` | — | *(required for gemini)* | Gemini API key. |
+| `OPENAI_API_KEY` | — | *(required for openai)* | OpenAI API key. |
+| `KRESEARCH_CUSTOM_API_KEY` | — | *(required for custom)* | API key for custom OpenAI-compatible endpoint. |
+| `KRESEARCH_CUSTOM_API_BASE` | — | *(required for custom)* | Base URL for custom endpoint (e.g. `https://api.deepseek.com/v1`). |
 | `KRESEARCH_PROVIDER` | `--provider` | `gemini` | LLM provider name. |
 | `KRESEARCH_MODEL` | `--model` | `gemini-3-flash-preview` | Primary model for the agent loop. |
 | `KRESEARCH_FAST_MODEL` | `--fast-model` | `gemini-3.1-flash-lite-preview` | Fast model for sub-agents. |
 | `KRESEARCH_PROXY` | `--proxy` | — | Global HTTP proxy for all outbound requests. |
 | `KRESEARCH_GEMINI_PROXY` | — | — | Proxy override for the Gemini provider only. |
 | `KRESEARCH_OPENAI_PROXY` | — | — | Proxy override for the OpenAI provider only. |
+| `KRESEARCH_CUSTOM_PROXY` | — | — | Proxy override for the custom provider only. |
 | `KRESEARCH_MAX_ITERATIONS` | `--max-iterations` | `20` | Safety limit on agent loop iterations. Set to `0` for unlimited. |
 | `KRESEARCH_MAX_CONCURRENT_SUBAGENTS` | — | `3` | Maximum number of concurrent sub-agents. |
 | `KRESEARCH_THINKING_LEVEL` | — | `high` | Thinking level passed to providers that support it. |
@@ -327,11 +347,18 @@ kresearch "Impact of AI on healthcare diagnostics"
 # Use a larger model for more complex reasoning
 kresearch --model gemini-3.1-pro-preview "Compare monetary policy approaches of the Fed vs ECB"
 
+# Use OpenAI
+kresearch --provider openai --model gpt-4o "Impact of AI on healthcare diagnostics"
+
+# Use a custom OpenAI-compatible endpoint (e.g. DeepSeek)
+kresearch --provider custom --model deepseek-chat "Impact of AI on healthcare diagnostics"
+
 # Save output and remove iteration limit
 kresearch --max-iterations 0 -o deep_dive.md "History and future of nuclear fusion energy"
 
 # List models to see what's available
 kresearch --list-models
+kresearch --provider openai --list-models
 ```
 
 ---
@@ -341,11 +368,13 @@ kresearch --list-models
 KResearch supports HTTP and SOCKS proxies for all outbound traffic. Proxies can be set globally or per-provider.
 
 ```bash
-# Global proxy (applies to Gemini API calls AND web scraping)
+# Global proxy (applies to all API calls AND web scraping)
 export KRESEARCH_PROXY=http://127.0.0.1:7890
 
-# Provider-specific proxy (overrides global for Gemini only)
+# Provider-specific proxy (overrides global for that provider only)
 export KRESEARCH_GEMINI_PROXY=socks5://127.0.0.1:1080
+export KRESEARCH_OPENAI_PROXY=socks5://127.0.0.1:1080
+export KRESEARCH_CUSTOM_PROXY=http://127.0.0.1:7890
 
 # CLI override
 kresearch --proxy http://proxy.example.com:8080 "your query"
@@ -353,6 +382,7 @@ kresearch --proxy http://proxy.example.com:8080 "your query"
 
 The proxy is passed to:
 - `google.genai.Client(http_options={"proxy": ...})` for Gemini API calls.
+- `openai.AsyncOpenAI(http_client=DefaultAsyncHttpxClient(proxy=...))` for OpenAI and custom API calls.
 - `httpx.AsyncClient(proxy=...)` for `read_webpage` fallback scraping.
 - Future provider SDK clients.
 
@@ -417,7 +447,11 @@ src/kresearch/
 │   ├── gemini/
 │   │   ├── provider.py      # GeminiProvider — google-genai SDK integration
 │   │   └── chat.py          # GeminiChatSession — multi-turn chat with batch function responses
-│   ├── openai/__init__.py   # Placeholder (NotImplementedError)
+│   ├── openai/
+│   │   ├── provider.py      # OpenaiProvider — openai SDK integration
+│   │   └── chat.py          # OpenaiChatSession — multi-turn chat with tool_call_id tracking
+│   ├── custom/
+│   │   └── provider.py      # CustomProvider — subclass of OpenaiProvider with custom base_url
 │   ├── anthropic/__init__.py
 │   ├── xai/__init__.py
 │   └── perplexity/__init__.py
@@ -492,7 +526,7 @@ Final Report → stdout and optionally → file
 
 ### Optional dependencies
 
-`openai` (for future OpenAI provider), `anthropic` (for future Anthropic provider)
+`openai` (for OpenAI and custom providers), `anthropic` (for future Anthropic provider)
 
 ---
 
@@ -500,7 +534,8 @@ Final Report → stdout and optionally → file
 
 ### Providers
 
-- [ ] **OpenAI provider** — GPT-4o / GPT-4o-mini via the OpenAI SDK with function calling
+- [x] **OpenAI provider** — GPT-4o / GPT-4o-mini via the OpenAI SDK with function calling
+- [x] **Custom API provider** — Any OpenAI-compatible endpoint (DeepSeek, Together, Ollama, etc.)
 - [ ] **Anthropic provider** — Claude Sonnet / Haiku via the Anthropic SDK with tool use
 - [ ] **xAI provider** — Grok-3 / Grok-3-fast
 - [ ] **Perplexity provider** — Sonar Pro / Sonar for search-native research

@@ -7,7 +7,8 @@ from kresearch.providers.base import ProviderInterface
 
 PROVIDER_REGISTRY: dict[str, str] = {
     "gemini": "kresearch.providers.gemini.provider.GeminiProvider",
-    "openai": "kresearch.providers.openai",
+    "openai": "kresearch.providers.openai.provider.OpenaiProvider",
+    "custom": "kresearch.providers.custom.provider.CustomProvider",
     "anthropic": "kresearch.providers.anthropic",
     "xai": "kresearch.providers.xai",
     "perplexity": "kresearch.providers.perplexity",
