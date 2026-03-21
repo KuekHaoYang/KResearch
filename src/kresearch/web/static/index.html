@@ -16,15 +16,12 @@
   body { background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; }
   a { color: var(--accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
-
   .container { max-width: 960px; margin: 0 auto; padding: 16px; }
 
-  /* Header */
   .header { text-align: center; padding: 24px 0 16px; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
   .header h1 { color: var(--accent); font-size: 20px; letter-spacing: 2px; }
   .header .sub { color: var(--dim); font-size: 12px; margin-top: 4px; }
 
-  /* Query input */
   .query-section { display: flex; gap: 8px; margin-bottom: 12px; }
   .query-section input {
     flex: 1; padding: 10px 14px; background: var(--surface); border: 1px solid var(--border);
@@ -41,7 +38,6 @@
   .btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
   .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-  /* Settings */
   .settings-toggle { color: var(--dim); font-size: 12px; cursor: pointer; margin-bottom: 8px; display: inline-block; }
   .settings-toggle:hover { color: var(--text); }
   .settings-panel {
@@ -59,8 +55,9 @@
   .setting-field select option { background: var(--bg); color: var(--text); }
   .setting-field .checkbox-wrap { display: flex; align-items: center; gap: 6px; padding: 6px 0; }
   .setting-field .checkbox-wrap input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); }
+  .setting-field .model-custom { margin-top: 4px; display: none; }
+  .setting-field .model-custom.visible { display: block; }
 
-  /* Stats bar */
   .stats-bar {
     display: flex; gap: 16px; padding: 8px 12px; background: var(--surface);
     border: 1px solid var(--border); border-radius: 6px; margin-bottom: 12px;
@@ -68,7 +65,6 @@
   }
   .stats-bar .stat-val { color: var(--green); font-weight: 600; }
 
-  /* Research log */
   .log-section {
     background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
     max-height: 400px; overflow-y: auto; padding: 12px; margin-bottom: 12px;
@@ -80,15 +76,11 @@
   .log-entry.result { color: var(--dim); padding-left: 20px; }
   .log-entry.info { color: var(--dim); }
   .log-entry.error { color: var(--red); }
-  .log-entry .time { color: var(--dim); font-size: 11px; }
-  .log-entry .check { color: var(--green); }
 
-  /* Interrupt */
   .interrupt-section { display: none; gap: 8px; margin-bottom: 12px; }
   .interrupt-section.active { display: flex; }
   .interrupt-section input { flex: 1; padding: 8px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; color: var(--text); font-family: var(--font); font-size: 13px; }
 
-  /* Report */
   .report-section {
     display: none; background: var(--surface); border: 1px solid var(--green);
     border-radius: 6px; padding: 20px; margin-bottom: 16px;
@@ -105,7 +97,6 @@
   .report-section th, .report-section td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
   .report-section th { background: var(--bg); }
 
-  /* Past reports */
   .past-reports { margin-top: 16px; }
   .past-reports h3 { color: var(--dim); font-size: 13px; margin-bottom: 8px; border-top: 1px solid var(--border); padding-top: 16px; }
   .report-item {
@@ -119,12 +110,10 @@
   .report-item .del-btn { color: var(--red); cursor: pointer; margin-left: 8px; font-size: 12px; border: none; background: none; font-family: var(--font); }
   .report-item .del-btn:hover { text-decoration: underline; }
 
-  /* Connection status */
   .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
   .status-dot.connected { background: var(--green); }
   .status-dot.disconnected { background: var(--red); }
 
-  /* Scrollbar */
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: var(--bg); }
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
@@ -175,14 +164,45 @@
   const $ = id => document.getElementById(id);
   let ws = null, sessionId = null, running = false;
 
-  // Elements
   const queryInput = $('queryInput'), startBtn = $('startBtn');
   const logSection = $('logSection'), statsBar = $('statsBar');
   const interruptSection = $('interruptSection'), interruptInput = $('interruptInput');
   const reportSection = $('reportSection'), reportsList = $('reportsList');
   const statusDot = $('statusDot'), statusText = $('statusText');
 
-  // Connect WebSocket
+  // ── localStorage settings persistence ──
+  const STORAGE_KEY = 'kresearch_settings';
+
+  function saveSettings() {
+    const data = {};
+    document.querySelectorAll('.setting-field [name]').forEach(el => {
+      if (el.type === 'checkbox') data[el.name] = el.checked;
+      else data[el.name] = el.value;
+    });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  }
+
+  function loadSavedSettings() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      return raw ? JSON.parse(raw) : {};
+    } catch { return {}; }
+  }
+
+  function applySaved(el) {
+    const saved = loadSavedSettings();
+    if (!(el.name in saved)) return;
+    const v = saved[el.name];
+    if (el.type === 'checkbox') el.checked = !!v;
+    else el.value = v;
+  }
+
+  function bindAutoSave(el) {
+    el.addEventListener('change', saveSettings);
+    el.addEventListener('input', saveSettings);
+  }
+
+  // ── WebSocket ──
   function connect() {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     ws = new WebSocket(`${proto}//${location.host}/ws`);
@@ -212,7 +232,6 @@
     if (v) { statsBar.style.display = 'flex'; logSection.style.display = 'block'; }
   }
 
-  // Event handler
   function handleEvent(evt) {
     const d = evt.data || {};
     switch (evt.type) {
@@ -223,19 +242,18 @@
       case 'start_research':
         logEntry(`Research started: "${d.query}"`, 'info');
         break;
-      case 'action':
+      case 'action': {
         const icon = {'web_search':'🔍','read_webpage':'📄','execute_python':'💻',
           'update_findings':'📝','log_contradiction':'⚠️','spawn_subagent':'🤖',
           'draft_report':'📋'}[d.tool] || '⚙️';
-        const timeStr = d.elapsed != null ? `  ${d.elapsed.toFixed(1)}s` : '';
-        logEntry(`${icon} ${d.description}  ✓${timeStr}`, 'action');
+        const ts = d.elapsed != null ? `  ${d.elapsed.toFixed(1)}s` : '';
+        logEntry(`${icon} ${d.description}  ✓${ts}`, 'action');
         break;
+      }
       case 'thinking':
-        logEntry(`🧠 ${d.text}`, 'thinking');
-        break;
+        logEntry(`🧠 ${d.text}`, 'thinking'); break;
       case 'result_summary':
-        logEntry(`→ ${d.summary}`, 'result');
-        break;
+        logEntry(`→ ${d.summary}`, 'result'); break;
       case 'stats':
         $('statIter').textContent = d.iteration;
         $('statSources').textContent = d.sources;
@@ -243,8 +261,7 @@
         logEntry(`── Iteration ${d.iteration} │ Sources: ${d.sources} │ Tokens: ~${Math.round(d.tokens/1000)}K ──`, 'info');
         break;
       case 'log':
-        logEntry(d.message, 'info');
-        break;
+        logEntry(d.message, 'info'); break;
       case 'report':
         reportSection.classList.add('visible');
         reportSection.innerHTML = marked.parse(d.markdown || '');
@@ -253,13 +270,9 @@
         logEntry(`✅ Done in ${d.time_str} │ Sources: ${d.sources} │ Iterations: ${d.iterations} │ Tokens: ~${Math.round(d.tokens/1000)}K`, 'info');
         break;
       case 'stopped':
-        setRunning(false);
-        loadReports();
-        break;
+        setRunning(false); loadReports(); break;
       case 'error':
-        logEntry(`❌ ${d.message}`, 'error');
-        setRunning(false);
-        break;
+        logEntry(`❌ ${d.message}`, 'error'); setRunning(false); break;
     }
   }
 
@@ -271,7 +284,7 @@
     logSection.scrollTop = logSection.scrollHeight;
   }
 
-  // Start research
+  // ── Start research ──
   startBtn.onclick = () => {
     const q = queryInput.value.trim();
     if (!q || !ws || ws.readyState !== 1) return;
@@ -279,23 +292,30 @@
     reportSection.classList.remove('visible');
     reportSection.innerHTML = '';
     setRunning(true);
-    // Gather config overrides from settings
     const config = {};
-    document.querySelectorAll('.setting-field input, .setting-field select').forEach(el => {
+    document.querySelectorAll('.setting-field [name]').forEach(el => {
+      if (el.classList.contains('model-custom') && !el.classList.contains('visible')) return;
       if (el.type === 'checkbox') {
         if (String(el.checked) !== el.dataset.default) config[el.name] = el.checked;
       } else if (el.type === 'password') {
-        if (el.value) config[el.name] = el.value;  // only send if user typed something
+        if (el.value) config[el.name] = el.value;
+      } else if (el.tagName === 'SELECT' && el.dataset.role === 'model') {
+        // Model dropdown: use custom input value if "__custom__" is selected
+        if (el.value === '__custom__') {
+          const ci = el.parentElement.querySelector('.model-custom');
+          if (ci && ci.value) config[el.name] = ci.value;
+        } else if (el.value) {
+          config[el.name] = el.value;
+        }
       } else if (el.value && el.value !== el.dataset.default) {
         config[el.name] = el.type === 'number' ? Number(el.value) : el.value;
       }
     });
     ws.send(JSON.stringify({ type: 'start', query: q, config }));
   };
-
   queryInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') startBtn.click(); });
 
-  // Interrupt
+  // ── Interrupt ──
   $('sendInterrupt').onclick = () => {
     const msg = interruptInput.value.trim();
     if (msg && ws) { ws.send(JSON.stringify({ type: 'interrupt', message: msg })); interruptInput.value = ''; }
@@ -303,42 +323,107 @@
   $('stopBtn').onclick = () => { if (ws) ws.send(JSON.stringify({ type: 'stop' })); };
   interruptInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') $('sendInterrupt').click(); });
 
-  // Settings
+  // ── Settings ──
   $('settingsToggle').onclick = () => $('settingsPanel').classList.toggle('open');
 
-  // Track model datalists so we can refresh them when provider changes
-  const modelDataLists = {};  // { fieldName: datalistElement }
+  // Model <select> elements we need to dynamically populate
+  const modelSelects = {};  // { fieldName: selectElement }
+  let lastFetchedProvider = null;
 
   async function refreshModelList() {
     const providerSel = document.querySelector('.setting-field select[name="provider"]');
-    const provider = providerSel ? providerSel.value : '';
-    // Gather API keys from settings form for authentication
+    const provider = providerSel ? (providerSel.value || providerSel.dataset.default) : '';
+    if (provider === lastFetchedProvider) return;  // avoid redundant fetches
+    lastFetchedProvider = provider;
+
+    // Gather API keys from form (or they'll come from server env)
     const params = new URLSearchParams();
     if (provider) params.set('provider', provider);
     ['gemini_api_key', 'openai_api_key', 'custom_api_key', 'custom_api_base'].forEach(k => {
       const el = document.querySelector(`.setting-field input[name="${k}"]`);
       if (el && el.value) params.set(k, el.value);
     });
+
+    // Set loading state
+    Object.values(modelSelects).forEach(sel => {
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">Loading models...</option>';
+      sel.value = cur;
+    });
+
     try {
       const res = await fetch(`/api/models?${params}`);
       const data = await res.json();
-      if (Array.isArray(data)) {
-        const ids = data.map(m => m.id);
-        Object.values(modelDataLists).forEach(dl => {
-          dl.innerHTML = '';
-          ids.forEach(id => {
-            const opt = document.createElement('option');
-            opt.value = id;
-            dl.appendChild(opt);
-          });
+      if (!Array.isArray(data)) throw new Error(data.error || 'Failed');
+
+      const saved = loadSavedSettings();
+      Object.entries(modelSelects).forEach(([fieldName, sel]) => {
+        const savedVal = saved[fieldName] || '';
+        const defaultVal = sel.dataset.default || '';
+        sel.innerHTML = '';
+
+        // Default option
+        const defOpt = document.createElement('option');
+        defOpt.value = ''; defOpt.textContent = `(default: ${defaultVal})`;
+        sel.appendChild(defOpt);
+
+        // Model options from API
+        data.forEach(m => {
+          const opt = document.createElement('option');
+          opt.value = m.id;
+          opt.textContent = m.context_window
+            ? `${m.id}  (${Math.round(m.context_window/1000)}K ctx)`
+            : m.id;
+          sel.appendChild(opt);
         });
-      }
-    } catch {}
+
+        // Custom option
+        const customOpt = document.createElement('option');
+        customOpt.value = '__custom__';
+        customOpt.textContent = '(enter custom model ID...)';
+        sel.appendChild(customOpt);
+
+        // Restore saved value
+        if (savedVal && savedVal !== '__custom__') {
+          // Check if savedVal exists in options
+          const exists = data.some(m => m.id === savedVal);
+          if (!exists && savedVal) {
+            // Add it as an option so it's visible
+            const opt = document.createElement('option');
+            opt.value = savedVal; opt.textContent = savedVal + ' (custom)';
+            sel.insertBefore(opt, customOpt);
+          }
+          sel.value = savedVal;
+        }
+      });
+    } catch {
+      // On error, just show default + custom
+      Object.entries(modelSelects).forEach(([fieldName, sel]) => {
+        const defaultVal = sel.dataset.default || '';
+        const saved = loadSavedSettings();
+        const savedVal = saved[fieldName] || '';
+        sel.innerHTML = '';
+        const defOpt = document.createElement('option');
+        defOpt.value = ''; defOpt.textContent = `(default: ${defaultVal})`;
+        sel.appendChild(defOpt);
+        if (defaultVal) {
+          const opt = document.createElement('option');
+          opt.value = defaultVal; opt.textContent = defaultVal;
+          sel.appendChild(opt);
+        }
+        const customOpt = document.createElement('option');
+        customOpt.value = '__custom__';
+        customOpt.textContent = '(enter custom model ID...)';
+        sel.appendChild(customOpt);
+        if (savedVal) sel.value = savedVal;
+      });
+    }
   }
 
   fetch('/api/config').then(r => r.json()).then(data => {
     const grid = $('settingsGrid');
-    let datalistId = 0;
+    const saved = loadSavedSettings();
+
     (data.fields || []).forEach(f => {
       if (f.name === 'model_config') return;
       const div = document.createElement('div');
@@ -357,25 +442,42 @@
         (f.choices || []).forEach(c => {
           const opt = document.createElement('option');
           opt.value = c; opt.textContent = c;
-          if (f.current === c) opt.selected = true;
           sel.appendChild(opt);
         });
+        applySaved(sel);
+        if (!sel.value && f.current) sel.value = f.current;
+        bindAutoSave(sel);
         div.appendChild(sel);
-        // When provider changes, refresh the model lists
-        if (f.name === 'provider') sel.addEventListener('change', refreshModelList);
+        if (f.name === 'provider') {
+          sel.addEventListener('change', () => { lastFetchedProvider = null; refreshModelList(); });
+        }
       } else if (f.widget === 'combo') {
-        const dlId = 'dl_' + (datalistId++);
-        const input = document.createElement('input');
-        input.name = f.name; input.type = 'text';
-        input.setAttribute('list', dlId);
-        input.value = f.current ?? '';
-        input.dataset.default = f.default ?? '';
-        input.placeholder = f.default ?? '';
-        const dl = document.createElement('datalist');
-        dl.id = dlId;
-        modelDataLists[f.name] = dl;
-        div.appendChild(input);
-        div.appendChild(dl);
+        // Model fields: real <select> dropdown + hidden custom text input
+        const sel = document.createElement('select');
+        sel.name = f.name;
+        sel.dataset.default = f.default ?? '';
+        sel.dataset.role = 'model';
+        // Placeholder while loading
+        const loadOpt = document.createElement('option');
+        loadOpt.value = ''; loadOpt.textContent = `(default: ${f.default || ''})`;
+        sel.appendChild(loadOpt);
+        modelSelects[f.name] = sel;
+
+        // Custom model text input (hidden by default)
+        const customInput = document.createElement('input');
+        customInput.type = 'text';
+        customInput.className = 'model-custom';
+        customInput.name = f.name + '_custom';
+        customInput.placeholder = 'Enter custom model ID...';
+
+        sel.addEventListener('change', () => {
+          customInput.classList.toggle('visible', sel.value === '__custom__');
+          saveSettings();
+        });
+        bindAutoSave(sel);
+        bindAutoSave(customInput);
+        div.appendChild(sel);
+        div.appendChild(customInput);
       } else if (f.widget === 'checkbox') {
         const wrap = document.createElement('div');
         wrap.className = 'checkbox-wrap';
@@ -384,18 +486,21 @@
         cb.checked = !!f.current;
         cb.dataset.default = String(f.default ?? false);
         const span = document.createElement('span');
-        span.textContent = f.current ? 'Enabled' : 'Disabled';
         span.style.fontSize = '12px'; span.style.color = 'var(--dim)';
-        cb.onchange = () => { span.textContent = cb.checked ? 'Enabled' : 'Disabled'; };
+        const updateLabel = () => { span.textContent = cb.checked ? 'Enabled' : 'Disabled'; };
+        applySaved(cb);
+        updateLabel();
+        cb.addEventListener('change', () => { updateLabel(); saveSettings(); });
         wrap.appendChild(cb); wrap.appendChild(span);
         div.appendChild(wrap);
       } else if (f.widget === 'password') {
         const input = document.createElement('input');
         input.name = f.name; input.type = 'password';
-        input.value = '';
         input.dataset.default = '';
-        input.placeholder = f.is_secret ? '(enter to override)' : '';
+        input.placeholder = '(enter to override)';
         input.autocomplete = 'off';
+        applySaved(input);
+        bindAutoSave(input);
         div.appendChild(input);
       } else if (f.widget === 'number') {
         const input = document.createElement('input');
@@ -403,6 +508,8 @@
         input.value = f.current ?? '';
         input.dataset.default = f.default ?? '';
         input.placeholder = String(f.default ?? '');
+        applySaved(input);
+        bindAutoSave(input);
         div.appendChild(input);
       } else {
         const input = document.createElement('input');
@@ -410,15 +517,18 @@
         input.value = f.current ?? '';
         input.dataset.default = f.default ?? '';
         input.placeholder = f.default ?? '';
+        applySaved(input);
+        bindAutoSave(input);
         div.appendChild(input);
       }
       grid.appendChild(div);
     });
-    // Populate model lists on initial load
+
+    // Fetch models for initial provider
     refreshModelList();
   }).catch(() => {});
 
-  // Past reports
+  // ── Past reports ──
   async function loadReports() {
     try {
       const res = await fetch('/api/reports');
@@ -457,7 +567,7 @@
 
   function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
-  // Init
+  // ── Init ──
   connect();
   loadReports();
 })();

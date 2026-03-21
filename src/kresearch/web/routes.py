@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from starlette.requests import Request
@@ -75,7 +76,7 @@ async def list_models(request: Request) -> JSONResponse:
     try:
         cfg = KResearchConfig(**overrides)
         prov = get_provider(cfg)
-        models = prov.list_models()
+        models = await asyncio.to_thread(prov.list_models)
         return JSONResponse([{"id": m.id, "name": m.name, "context_window": m.context_window}
                              for m in models])
     except Exception as e:
