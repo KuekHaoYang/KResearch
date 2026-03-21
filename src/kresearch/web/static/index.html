@@ -333,16 +333,8 @@
   async function refreshModelList() {
     const providerSel = document.querySelector('.setting-field select[name="provider"]');
     const provider = providerSel ? (providerSel.value || providerSel.dataset.default) : '';
-    if (provider === lastFetchedProvider) return;  // avoid redundant fetches
+    if (provider === lastFetchedProvider) return;
     lastFetchedProvider = provider;
-
-    // Gather API keys from form (or they'll come from server env)
-    const params = new URLSearchParams();
-    if (provider) params.set('provider', provider);
-    ['gemini_api_key', 'openai_api_key', 'custom_api_key', 'custom_api_base'].forEach(k => {
-      const el = document.querySelector(`.setting-field input[name="${k}"]`);
-      if (el && el.value) params.set(k, el.value);
-    });
 
     // Set loading state
     Object.values(modelSelects).forEach(sel => {
@@ -352,9 +344,9 @@
     });
 
     try {
-      const res = await fetch(`/api/models?${params}`);
+      const res = await fetch(`/api/models?provider=${encodeURIComponent(provider)}`);
       const data = await res.json();
-      if (!Array.isArray(data)) throw new Error(data.error || 'Failed');
+      if (!Array.isArray(data)) throw new Error(data.error || 'Failed to fetch models');
 
       const saved = loadSavedSettings();
       Object.entries(modelSelects).forEach(([fieldName, sel]) => {
@@ -396,8 +388,9 @@
           sel.value = savedVal;
         }
       });
-    } catch {
-      // On error, just show default + custom
+    } catch (err) {
+      console.error('Failed to fetch models:', err);
+      // On error, show default + custom as fallback
       Object.entries(modelSelects).forEach(([fieldName, sel]) => {
         const defaultVal = sel.dataset.default || '';
         const saved = loadSavedSettings();

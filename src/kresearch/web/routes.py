@@ -68,11 +68,6 @@ async def list_models(request: Request) -> JSONResponse:
     overrides: dict = {}
     if provider_name:
         overrides["provider"] = provider_name
-    # Pass through API keys from query params so the provider can authenticate
-    for key_field in ("gemini_api_key", "openai_api_key", "custom_api_key", "custom_api_base"):
-        val = request.query_params.get(key_field, "")
-        if val:
-            overrides[key_field] = val
     try:
         cfg = KResearchConfig(**overrides)
         prov = get_provider(cfg)

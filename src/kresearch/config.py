@@ -9,7 +9,10 @@ from pydantic_settings import BaseSettings
 class KResearchConfig(BaseSettings):
     """Configuration loaded from env vars, .env file, and CLI overrides."""
 
-    model_config = {"env_prefix": "KRESEARCH_", "env_file": ".env", "extra": "ignore"}
+    model_config = {
+        "env_prefix": "KRESEARCH_", "env_file": ".env",
+        "extra": "ignore", "populate_by_name": True,
+    }
 
     # Provider selection
     provider: str = "gemini"
