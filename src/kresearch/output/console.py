@@ -73,11 +73,13 @@ class ConsoleUI:
         ))
         self.console.print('[dim]Type a message to redirect, or "stop" to finish early[/dim]\n')
 
-    def log_action(self, tool: str, desc: str, status: str = "done") -> None:
-        """Print a permanent log line for a tool call."""
+    def log_action(self, tool: str, desc: str, status: str = "done",
+                   elapsed: float | None = None) -> None:
+        """Print a permanent log line for a tool call with optional timing."""
         icon = ICONS.get(tool, "⚙️ ")
         mark = "[green]✓[/green]" if status == "done" else "[red]✗[/red]"
-        self.console.print(f"  {icon} {desc}  {mark}")
+        time_str = f"  [dim]{elapsed:.1f}s[/dim]" if elapsed is not None else ""
+        self.console.print(f"  {icon} {desc}  {mark}{time_str}")
 
     def log_thinking(self, text: str) -> None:
         """Print the model's thinking/reasoning."""

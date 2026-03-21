@@ -1,6 +1,6 @@
 """Orchestrator — the autonomous agent loop with full logging."""
 from __future__ import annotations
-import asyncio, select, sys
+import asyncio, select, sys, time
 
 from kresearch.config import KResearchConfig
 from kresearch.models.state import ResearchState
@@ -36,7 +36,9 @@ class Orchestrator:
 
     async def _agent_loop(self, chat: ChatSession, state: ResearchState,
                           input_queue: asyncio.Queue[str]) -> str:
+        t0 = time.monotonic()
         response = await chat.send(f"Research this thoroughly: {state.query}")
+        self._console.print(f"  [dim]⏱  LLM response: {time.monotonic() - t0:.1f}s[/dim]")
         self._log_response(response)
         state.increment_iteration()
         while True:
@@ -75,14 +77,19 @@ class Orchestrator:
             return None
         results: list[tuple[str, dict]] = []
         for fc in response.function_calls:
-            self._console.log_action(fc.name, f"{fc.name}({_short_args(fc.args)})")
+            self._console.log_action(fc.name, f"{fc.name}({_short_args(fc.args)})", status="running")
+            t0 = time.monotonic()
             result = await self._registry.execute(
                 fc.name, fc.args, state=state,
                 provider=self._provider, config=self._config)
+            elapsed = time.monotonic() - t0
+            self._console.log_action(fc.name, f"{fc.name}({_short_args(fc.args)})", elapsed=elapsed)
             self._console.log_result_summary(fc.name, result)
             state.log_action(fc.name, fc.args, str(result)[:200])
             results.append((fc.name, result))
+        t0 = time.monotonic()
         response = await chat.send_function_responses(results)
+        self._console.print(f"  [dim]⏱  LLM response: {time.monotonic() - t0:.1f}s[/dim]")
         self._log_response(response)
         if response.usage:
             state.token_usage.add(response.usage.input_tokens, response.usage.output_tokens)
@@ -120,12 +127,9 @@ class Orchestrator:
                 await asyncio.sleep(0.3)
                 if select.select([sys.stdin], [], [], 0)[0]:
                     line = sys.stdin.readline()
-                    if not line:
-                        break
-                    if line.strip():
-                        await input_queue.put(line.strip())
-            except (asyncio.CancelledError, Exception):
-                break
+                    if not line: break
+                    if line.strip(): await input_queue.put(line.strip())
+            except (asyncio.CancelledError, Exception): break
 
     def _build_system_prompt(self, state: ResearchState) -> str:
         gaps, contras = state.mind_map.get_gaps(), state.mind_map.get_contradictions()
