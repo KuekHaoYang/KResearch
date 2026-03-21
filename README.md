@@ -496,6 +496,61 @@ Final Report → stdout and optionally → file
 
 ---
 
+## Roadmap
+
+### Providers
+
+- [ ] **OpenAI provider** — GPT-4o / GPT-4o-mini via the OpenAI SDK with function calling
+- [ ] **Anthropic provider** — Claude Sonnet / Haiku via the Anthropic SDK with tool use
+- [ ] **xAI provider** — Grok-3 / Grok-3-fast
+- [ ] **Perplexity provider** — Sonar Pro / Sonar for search-native research
+- [ ] **Ollama / local models** — Run research with locally hosted models via the Ollama API
+- [ ] **Provider auto-fallback** — If one provider fails (rate limit, downtime), automatically retry with a configured fallback
+
+### Tools & Capabilities
+
+- [ ] **PDF reader tool** — Extract and analyze content from PDF URLs (research papers, reports)
+- [ ] **Image/chart analysis** — Use multimodal models to interpret charts, graphs, and infographics found during research
+- [ ] **Academic search** — Dedicated tool for Semantic Scholar / arXiv / Google Scholar APIs
+- [ ] **Brave Search API** — Alternative search backend with an API key for higher-quality results
+- [ ] **Memory across sessions** — Persist mind maps to disk so research can be resumed later
+- [ ] **Concurrent sub-agents** — Run multiple sub-agents in parallel with `asyncio.gather()` instead of sequentially
+
+### Output & Integrations
+
+- [ ] **Telegram bot** — Run KResearch as a Telegram bot: send a query, receive the report as a message. Support for inline progress updates via message editing
+- [ ] **Discord bot** — Same as Telegram, with thread-based research sessions
+- [ ] **Web UI** — Simple FastAPI + WebSocket frontend: submit queries, watch research happen in real time, browse past reports
+- [ ] **Export formats** — PDF export, HTML export, DOCX export via pandoc
+- [ ] **Structured JSON output** — Machine-readable report format alongside Markdown for programmatic consumption
+
+### Agent Intelligence
+
+- [ ] **Multi-turn follow-up** — After the report is generated, allow the user to ask follow-up questions that trigger additional research with the existing mind map as context
+- [ ] **Source quality scoring** — Automatic domain reputation scoring (academic > news > blog) to weight findings
+- [ ] **Fact-checking mode** — Given a specific claim, verify it against multiple sources and return a confidence assessment
+- [ ] **Comparative research** — "Compare X vs Y" mode that structures the report as a side-by-side analysis
+- [ ] **Timeline mode** — For historical queries, build a chronological timeline with cited events
+
+### Developer Experience
+
+- [ ] **Plugin system** — Allow third-party tools to be loaded from entry points or a plugins directory
+- [ ] **Webhook notifications** — POST the completed report to a webhook URL when research finishes
+- [ ] **API server mode** — Run KResearch as a REST API (`kresearch serve`) for integration into other applications
+- [ ] **Docker image** — Pre-built container for easy deployment
+
+---
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+---
+
+## Support
+
+If KResearch saves you time, consider buying me a coffee:
+
+<a href="https://www.buymeacoffee.com/kuekhaoyang">
+  <img src="https://img.buymeacoffee.com/button-api/?text=Buy me a coffee&emoji=&slug=kuekhaoyang&button_colour=FFDD00&font_colour=000000&font_family=Cookie&outline_colour=000000&coffee_colour=ffffff" />
+</a>
