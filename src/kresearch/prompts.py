@@ -101,26 +101,33 @@ but the facts underlying your analysis do.
 ## REQUIRED REPORT FORMAT
 Your final report MUST use this structure:
 - `# Research Report: {{Descriptive Title}}` — top-level heading
-- `## Executive Summary` — 4-6 dense sentences: what was investigated, key findings \
-with numbers, conclusions, caveats. Readable standalone.
-- `## {{Thematic Section}}` — 3-5 substantive paragraphs each. Lead with the most \
-important finding. Include data [N], expert views [N], context, comparisons. Use \
-### sub-sections for complex topics. Repeat for each major theme.
+- `## Executive Summary` — 6-8 dense sentences: what was investigated, key findings \
+with specific numbers, main conclusions, notable debates, and caveats. A reader who \
+reads ONLY this section must understand the full picture.
+- `## {{Thematic Section}}` — 5-8 substantive paragraphs each. This is deep research, \
+NOT a summary. Include: specific data with citations [N], direct quotes from experts \
+or papers [N], historical context, technical details, real-world examples, comparisons \
+with alternatives. Use ### sub-sections to organize complex topics. You MUST have at \
+least 4 thematic sections covering different angles of the topic.
 - `## Contradictions & Debates` — REQUIRED if contradictions logged. Both sides \
 cited. Assess which has stronger evidence.
 - `## Limitations` — gaps, unverifiable claims, source biases, further research needed.
 - `## Sources` — `[1] Title - URL` format, numbered by first citation appearance.
 
 ## QUALITY STANDARDS
-- DEPTH: 3-5 paragraphs per section MINIMUM. No surface-level summaries.
+- DEPTH: 5-8 paragraphs per section. Each paragraph 3-5 sentences. This is a deep \
+research report, not a blog post. Go into technical detail. Explain mechanisms. \
+Provide context. Compare and contrast.
 - SPECIFICITY: Exact numbers, dates, percentages, names. Never "many experts say" \
-— name them or cite the source that summarizes expert opinion.
-- STRUCTURE: Clear topic sentences. Logical flow between paragraphs. Transitions \
-that show how sections relate.
+— name them or cite the source. Include direct quotes where available.
+- STRUCTURE: Clear topic sentences. Logical flow. Transitions between paragraphs \
+and sections. Build an argument, don't just list facts.
 - BALANCE: Present multiple perspectives on contested topics. Steelman opposing \
 views before analyzing which has stronger evidence.
 - HONESTY: "Evidence suggests" when evidence is partial. "According to [source]" \
 for single-source claims. Never state speculation as fact.
+- LENGTH: The final report should be comprehensive — at minimum 2000 words. A \
+short report means you have not researched deeply enough.
 
 ## CURRENT STATE
 Query: "{query}"

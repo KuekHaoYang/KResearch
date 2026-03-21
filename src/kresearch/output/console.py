@@ -6,8 +6,6 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
-
-from kresearch.models.mind_map import MindMap
 from kresearch.providers.types import ModelInfo
 
 BANNER = r"""
@@ -48,22 +46,19 @@ class ConsoleUI:
         table = Table(title="Available Models", border_style="cyan", show_lines=True)
         table.add_column("Model ID", style="white", min_width=30)
         table.add_column("Display Name", style="dim")
-        table.add_column("Context Window", justify="right", style="green")
+        table.add_column("Context", justify="right", style="green")
         for m in models:
             mid = f"● {m.id} [yellow](default)[/yellow]" if m.id == default else f"  {m.id}"
-            ctx = f"{m.context_window:,} tokens" if m.context_window else "—"
-            table.add_row(mid, m.name, ctx)
+            table.add_row(mid, m.name, f"{m.context_window:,}" if m.context_window else "—")
         self.console.print(table)
 
     def show_config_table(self, config_data: dict) -> None:
-        """Display all configuration values in a table."""
         table = Table(title="Current Configuration", border_style="cyan", show_lines=True)
         table.add_column("Setting", style="bold white", min_width=25)
         table.add_column("Value", style="green")
         table.add_column("Source", style="dim")
         for key, (val, source) in config_data.items():
-            display = "********" if "key" in key.lower() and val else str(val)
-            table.add_row(key, display, source)
+            table.add_row(key, "********" if "key" in key.lower() and val else str(val), source)
         self.console.print(table)
 
     def start_research(self, query: str) -> None:
@@ -82,13 +77,13 @@ class ConsoleUI:
         self.console.print(f"  {icon} {desc}  {mark}{time_str}")
 
     def log_thinking(self, text: str) -> None:
-        """Print the model's thinking/reasoning."""
-        if not text or len(text.strip()) < 10:
+        """Print the model's thinking/reasoning — show full content."""
+        if not text or len(text.strip()) < 5:
             return
         snippet = text.strip()
-        if len(snippet) > 300:
-            snippet = snippet[:297] + "..."
-        self.console.print(f"\n  🧠 [dim italic]{snippet}[/dim italic]\n")
+        if len(snippet) > 500:
+            snippet = snippet[:497] + "..."
+        self.console.print(f"\n  🧠 [italic]{snippet}[/italic]\n")
 
     def log_result_summary(self, tool: str, result: dict) -> None:
         """Print a brief summary of what a tool call returned."""
@@ -97,14 +92,10 @@ class ConsoleUI:
             self.console.print(f"     [dim]→ {summary}[/dim]")
 
     def log_iteration(self, iteration: int, sources: int, tokens: int) -> None:
-        self._iteration = iteration
-        self._sources = sources
+        self._iteration, self._sources = iteration, sources
         self.console.print(
-            f"\n  {'─' * 50}\n"
-            f"  📌 Iteration {iteration}  │  Sources: {sources}  │  "
-            f"Tokens: ~{tokens // 1000}K\n"
-            f"  {'─' * 50}\n"
-        )
+            f"\n  {'─' * 50}\n  📌 Iteration {iteration}  │  "
+            f"Sources: {sources}  │  Tokens: ~{tokens // 1000}K\n  {'─' * 50}\n")
 
     def update_mind_map_display(self, mind_map: MindMap) -> None:
         pass  # Mind map updates are shown via update_findings log lines
@@ -116,6 +107,14 @@ class ConsoleUI:
         self.console.print("\n")
         self.console.print(Panel("[bold green]Research Complete[/bold green]", border_style="green"))
         self.console.print(text)
+
+    def show_total_time(self, elapsed: float, state) -> None:
+        mins, secs = int(elapsed // 60), int(elapsed % 60)
+        time_str = f"{mins}m {secs}s" if mins else f"{secs}s"
+        t = state.token_usage.input_tokens + state.token_usage.output_tokens
+        self.console.print(
+            f"\n  [bold cyan]Total research time: {time_str}[/bold cyan]  │  "
+            f"Sources: {state.mind_map.source_count()}  │  Iterations: {state.iteration}  │  Tokens: ~{t // 1000}K\n")
 
     def stop(self) -> None:
         pass  # No Live panel to stop

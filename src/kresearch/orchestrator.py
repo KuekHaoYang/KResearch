@@ -1,7 +1,6 @@
 """Orchestrator — the autonomous agent loop with full logging."""
 from __future__ import annotations
 import asyncio, select, sys, time
-
 from kresearch.config import KResearchConfig
 from kresearch.models.state import ResearchState
 from kresearch.output.console import ConsoleUI
@@ -18,8 +17,10 @@ class Orchestrator:
                  registry: ToolRegistry, console: ConsoleUI) -> None:
         self._config, self._provider = config, provider
         self._registry, self._console = registry, console
+        self._start_time = 0.0
 
     async def run(self, query: str) -> str:
+        self._start_time = time.monotonic()
         state = ResearchState.create(query, self._config.max_iterations)
         input_queue: asyncio.Queue[str] = asyncio.Queue()
         chat = await self._provider.create_chat(
@@ -29,16 +30,18 @@ class Orchestrator:
         self._console.start_research(query)
         input_task = asyncio.create_task(self._monitor_input(input_queue))
         try:
-            return await self._agent_loop(chat, state, input_queue)
+            report = await self._agent_loop(chat, state, input_queue)
         finally:
             input_task.cancel()
             self._console.stop()
+        elapsed = time.monotonic() - self._start_time
+        self._console.show_total_time(elapsed, state)
+        return report
 
     async def _agent_loop(self, chat: ChatSession, state: ResearchState,
                           input_queue: asyncio.Queue[str]) -> str:
-        t0 = time.monotonic()
-        response = await chat.send(f"Research this thoroughly: {state.query}")
-        self._console.print(f"  [dim]⏱  LLM response: {time.monotonic() - t0:.1f}s[/dim]")
+        self._console.print("  💭 [dim italic]Analyzing query and planning research strategy...[/dim italic]")
+        response = await self._timed_send(chat, f"Research this thoroughly: {state.query}")
         self._log_response(response)
         state.increment_iteration()
         while True:
@@ -46,24 +49,26 @@ class Orchestrator:
                 user_msg = await input_queue.get()
                 if user_msg.lower() in ("stop", "quit", "done"):
                     self._console.log_action("draft_report", "User requested stop")
-                    resp = await chat.send(
-                        "[USER INTERRUPT]: Stop. Call draft_report() then write "
-                        "the best report you can with current findings.")
-                    return await self._finalize(resp, state, chat)
+                    return await self._finalize(await chat.send(
+                        "[USER INTERRUPT]: Stop. Write the final report now."), state, chat)
                 self._console.print(f"\n  [bold yellow]>>> User: {user_msg}[/bold yellow]\n")
-                response = await chat.send(f"[USER INTERRUPT]: {user_msg}")
+                response = await self._timed_send(chat, f"[USER INTERRUPT]: {user_msg}")
                 self._log_response(response)
             result = await self._process_response(response, state, chat)
             if result is not None:
                 return result
             if state.is_over_budget():
                 self._console.log_action("draft_report", "Iteration limit reached")
-                resp = await chat.send(
-                    "Iteration limit reached. Call draft_report() NOW and write "
-                    "the final report with everything you have.")
-                return await self._finalize(resp, state, chat)
+                return await self._finalize(await chat.send(
+                    "Iteration limit. Call draft_report() NOW and write the report."), state, chat)
             state.increment_iteration()
             self._update_ui(state)
+
+    async def _timed_send(self, chat: ChatSession, message: str) -> GenerateResponse:
+        t0 = time.monotonic()
+        response = await chat.send(message)
+        self._console.print(f"  [dim]⏱  LLM response: {time.monotonic() - t0:.1f}s[/dim]")
+        return response
 
     async def _process_response(self, response: GenerateResponse,
                                 state: ResearchState, chat: ChatSession) -> str | None:
@@ -77,7 +82,6 @@ class Orchestrator:
             return None
         results: list[tuple[str, dict]] = []
         for fc in response.function_calls:
-            self._console.log_action(fc.name, f"{fc.name}({_short_args(fc.args)})", status="running")
             t0 = time.monotonic()
             result = await self._registry.execute(
                 fc.name, fc.args, state=state,
@@ -87,6 +91,7 @@ class Orchestrator:
             self._console.log_result_summary(fc.name, result)
             state.log_action(fc.name, fc.args, str(result)[:200])
             results.append((fc.name, result))
+        self._console.print("  💭 [dim italic]Processing results and deciding next steps...[/dim italic]")
         t0 = time.monotonic()
         response = await chat.send_function_responses(results)
         self._console.print(f"  [dim]⏱  LLM response: {time.monotonic() - t0:.1f}s[/dim]")
@@ -103,23 +108,19 @@ class Orchestrator:
         if response.thinking:
             self._console.log_thinking(response.thinking)
         if response.text and not response.function_calls and len(response.text) < 500:
-            self._console.print(f"  [dim]Agent: {response.text[:200]}[/dim]")
+            self._console.print(f"  [dim]Agent: {response.text[:300]}[/dim]")
 
-    async def _finalize(self, response: GenerateResponse,
+    async def _finalize(self, resp: GenerateResponse,
                         state: ResearchState, chat: ChatSession) -> str:
         for _ in range(5):
-            self._log_response(response)
-            if response.text and not response.function_calls:
-                return response.text
-            if response.function_calls:
-                results = [(fc.name, await self._registry.execute(
-                    fc.name, fc.args, state=state,
-                    provider=self._provider, config=self._config))
-                    for fc in response.function_calls]
-                response = await chat.send_function_responses(results)
-            else:
-                response = await chat.send("Write the final report now.")
-        return response.text or state.mind_map.get_summary()
+            self._log_response(resp)
+            if resp.text and not resp.function_calls: return resp.text
+            if resp.function_calls:
+                results = [(fc.name, await self._registry.execute(fc.name, fc.args, state=state,
+                    provider=self._provider, config=self._config)) for fc in resp.function_calls]
+                resp = await chat.send_function_responses(results)
+            else: resp = await chat.send("Write the final report now.")
+        return resp.text or state.mind_map.get_summary()
 
     async def _monitor_input(self, input_queue: asyncio.Queue[str]) -> None:
         while True:
@@ -132,13 +133,12 @@ class Orchestrator:
             except (asyncio.CancelledError, Exception): break
 
     def _build_system_prompt(self, state: ResearchState) -> str:
-        gaps, contras = state.mind_map.get_gaps(), state.mind_map.get_contradictions()
+        g, c = state.mind_map.get_gaps(), state.mind_map.get_contradictions()
         return SYSTEM_TEMPLATE.format(
             query=state.query, source_count=state.mind_map.source_count(),
             mind_map_summary=state.mind_map.get_summary() or "(no findings yet)",
-            gaps=", ".join(gaps) if gaps else "none identified yet",
-            contradictions=f"{len(contras)} unresolved" if contras else "none",
-            iteration=state.iteration,
+            gaps=", ".join(g) if g else "none identified yet",
+            contradictions=f"{len(c)} unresolved" if c else "none", iteration=state.iteration,
             max_iterations=str(state.max_iterations) if state.max_iterations else "unlimited")
 
     def _update_ui(self, state: ResearchState) -> None:
