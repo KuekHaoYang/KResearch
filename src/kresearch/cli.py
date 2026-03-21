@@ -66,6 +66,17 @@ def main(query, model, fast_model, provider, proxy, list_models, show_config,
         console.stop()
         console.print("\n[yellow]Research interrupted by user.[/yellow]")
         return
+    except Exception as e:
+        console.stop()
+        err = str(e)
+        if "429" in err or "RESOURCE_EXHAUSTED" in err:
+            console.print("\n[red]API rate limit exceeded. Wait a moment and try again,[/red]")
+            console.print("[red]or switch to a different model with --model.[/red]")
+        elif "API key" in err or "INVALID" in err:
+            console.print(f"\n[red]API authentication error: {err[:200]}[/red]")
+        else:
+            console.print(f"\n[red]Research failed: {err[:300]}[/red]")
+        raise SystemExit(1)
     console.show_report(report)
     if output:
         path = save_report(report, Path(output))
