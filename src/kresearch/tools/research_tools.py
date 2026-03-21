@@ -111,6 +111,16 @@ async def handle_draft_report(args: dict, **ctx) -> dict:
     state = ctx.get("state")
     if not state:
         return {"error": "No research state available."}
+    src_count = state.mind_map.source_count()
+    topics = len(state.mind_map.root.children)
+    if src_count < 10 or topics < 3:
+        return {
+            "status": "rejected",
+            "reason": f"Not enough research yet. You have {src_count} sources across "
+                      f"{topics} topics. Need at least 10 sources across 3+ topics. "
+                      "Keep searching and reading. Do NOT call draft_report() again until "
+                      "you have thoroughly covered the topic.",
+        }
     state.draft_requested = True
     data = state.mind_map.to_structured_data()
     return {"status": "ready", "mind_map": json.loads(json.dumps(data, default=str))}
